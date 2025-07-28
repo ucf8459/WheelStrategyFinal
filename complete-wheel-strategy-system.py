@@ -2514,7 +2514,8 @@ class PerformanceTracker:
                 'quantity': 1,
                 'realized_pnl': 250.0,
                 'status': 'CLOSED',
-                'close_date': datetime.now() - timedelta(days=1)
+                'close_date': datetime.now() - timedelta(days=1),
+                'is_sample': True  # Mark as sample data
             },
             {
                 'id': 'trade_002',
@@ -2525,7 +2526,8 @@ class PerformanceTracker:
                 'quantity': 2,
                 'realized_pnl': 350.0,
                 'status': 'CLOSED',
-                'close_date': datetime.now()
+                'close_date': datetime.now(),
+                'is_sample': True  # Mark as sample data
             },
             {
                 'id': 'trade_003',
@@ -2535,7 +2537,8 @@ class PerformanceTracker:
                 'premium': 3.20,
                 'quantity': 1,
                 'realized_pnl': 0.0,  # Still open
-                'status': 'OPEN'
+                'status': 'OPEN',
+                'is_sample': True  # Mark as sample data
             }
         ]
         
@@ -2546,7 +2549,8 @@ class PerformanceTracker:
                     'trade_id': trade['id'],
                     'realized_pnl': trade['realized_pnl'],
                     'close_date': trade['close_date'],
-                    'timestamp': trade['close_date']
+                    'timestamp': trade['close_date'],
+                    'is_sample': True  # Mark as sample data
                 })
         
     def log_trade(self, trade: Dict):
@@ -5062,22 +5066,28 @@ def get_realized_pnl():
             monthly_target = 0
             mtd_percentage = 0
         
+        # Check if data contains sample trades
+        has_sample_data = any(trade.get('is_sample', False) for trade in dashboard.tracker.trades)
+        
         pnl_data = {
             'todays_pnl': {
                 'realized_pnl': todays_pnl['realized_pnl'],
                 'trade_count': todays_pnl['trade_count'],
                 'winning_trades': todays_pnl['winning_trades'],
-                'losing_trades': todays_pnl['losing_trades']
+                'losing_trades': todays_pnl['losing_trades'],
+                'is_sample_data': has_sample_data
             },
             'mtd_pnl': {
                 'realized_pnl': mtd_pnl['realized_pnl'],
                 'trade_count': mtd_pnl['trade_count'],
                 'winning_trades': mtd_pnl['winning_trades'],
                 'losing_trades': mtd_pnl['losing_trades'],
-                'percentage_of_target': mtd_percentage
+                'percentage_of_target': mtd_percentage,
+                'is_sample_data': has_sample_data
             },
             'monthly_target': monthly_target,
-            'account_value': account_value
+            'account_value': account_value,
+            'has_sample_data': has_sample_data
         }
         
         logger.info(f"✅ Realized P&L: Today ${todays_pnl['realized_pnl']:.2f}, MTD ${mtd_pnl['realized_pnl']:.2f}")

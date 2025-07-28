@@ -157,6 +157,28 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             padding: 1rem;
             text-align: center;
+            position: relative;
+        }
+        
+        .sample-indicator {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #ff6b35;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+        
+        .metric-card.has-sample-data {
+            border: 2px solid #ff6b35;
+            background: linear-gradient(135deg, var(--card-bg) 0%, rgba(255, 107, 53, 0.05) 100%);
         }
         
         .metric-value {
@@ -742,45 +764,67 @@
             }
         }
         
-        // Update realized P&L metrics
-        function updateRealizedPnl(pnlData) {
-            if (!pnlData) return;
-            
-            // Update Today's P&L
-            const todaysPnlElement = document.getElementById('todays-pnl');
-            const todaysPnlTradesElement = document.getElementById('todays-pnl-trades');
-            
-            if (todaysPnlElement && pnlData.todays_pnl) {
-                const pnl = pnlData.todays_pnl.realized_pnl;
-                todaysPnlElement.textContent = `$${pnl.toFixed(2)}`;
-                todaysPnlElement.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
-                
-                if (todaysPnlTradesElement) {
-                    const trades = pnlData.todays_pnl.trade_count;
-                    const wins = pnlData.todays_pnl.winning_trades;
-                    const losses = pnlData.todays_pnl.losing_trades;
-                    todaysPnlTradesElement.textContent = `${trades} trades (${wins}W/${losses}L)`;
-                }
-            }
-            
-            // Update MTD P&L
-            const mtdPnlElement = document.getElementById('mtd-pnl');
-            const mtdPnlPercentageElement = document.getElementById('mtd-pnl-percentage');
-            
-            if (mtdPnlElement && pnlData.mtd_pnl) {
-                const pnl = pnlData.mtd_pnl.realized_pnl;
-                mtdPnlElement.textContent = `$${pnl.toFixed(2)}`;
-                mtdPnlElement.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
-                
-                if (mtdPnlPercentageElement) {
-                    const percentage = pnlData.mtd_pnl.percentage_of_target;
-                    const trades = pnlData.mtd_pnl.trade_count;
-                    const wins = pnlData.mtd_pnl.winning_trades;
-                    const losses = pnlData.mtd_pnl.losing_trades;
-                    mtdPnlPercentageElement.textContent = `${percentage.toFixed(1)}% of target (${trades} trades)`;
-                }
-            }
-        }
+                             // Update realized P&L metrics
+                     function updateRealizedPnl(pnlData) {
+                         if (!pnlData) return;
+                         
+                         // Update Today's P&L
+                         const todaysPnlElement = document.getElementById('todays-pnl');
+                         const todaysPnlTradesElement = document.getElementById('todays-pnl-trades');
+                         const todaysPnlCard = document.getElementById('todays-pnl-card');
+                         const todaysPnlSampleIndicator = document.getElementById('todays-pnl-sample-indicator');
+                         
+                         if (todaysPnlElement && pnlData.todays_pnl) {
+                             const pnl = pnlData.todays_pnl.realized_pnl;
+                             todaysPnlElement.textContent = `$${pnl.toFixed(2)}`;
+                             todaysPnlElement.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+                             
+                             if (todaysPnlTradesElement) {
+                                 const trades = pnlData.todays_pnl.trade_count;
+                                 const wins = pnlData.todays_pnl.winning_trades;
+                                 const losses = pnlData.todays_pnl.losing_trades;
+                                 todaysPnlTradesElement.textContent = `${trades} trades (${wins}W/${losses}L)`;
+                             }
+                             
+                             // Handle sample data indicator
+                             if (pnlData.todays_pnl.is_sample_data && todaysPnlCard && todaysPnlSampleIndicator) {
+                                 todaysPnlCard.classList.add('has-sample-data');
+                                 todaysPnlSampleIndicator.style.display = 'block';
+                             } else if (todaysPnlCard && todaysPnlSampleIndicator) {
+                                 todaysPnlCard.classList.remove('has-sample-data');
+                                 todaysPnlSampleIndicator.style.display = 'none';
+                             }
+                         }
+                         
+                         // Update MTD P&L
+                         const mtdPnlElement = document.getElementById('mtd-pnl');
+                         const mtdPnlPercentageElement = document.getElementById('mtd-pnl-percentage');
+                         const mtdPnlCard = document.getElementById('mtd-pnl-card');
+                         const mtdPnlSampleIndicator = document.getElementById('mtd-pnl-sample-indicator');
+                         
+                         if (mtdPnlElement && pnlData.mtd_pnl) {
+                             const pnl = pnlData.mtd_pnl.realized_pnl;
+                             mtdPnlElement.textContent = `$${pnl.toFixed(2)}`;
+                             mtdPnlElement.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+                             
+                             if (mtdPnlPercentageElement) {
+                                 const percentage = pnlData.mtd_pnl.percentage_of_target;
+                                 const trades = pnlData.mtd_pnl.trade_count;
+                                 const wins = pnlData.mtd_pnl.winning_trades;
+                                 const losses = pnlData.mtd_pnl.losing_trades;
+                                 mtdPnlPercentageElement.textContent = `${percentage.toFixed(1)}% of target (${trades} trades)`;
+                             }
+                             
+                             // Handle sample data indicator
+                             if (pnlData.mtd_pnl.is_sample_data && mtdPnlCard && mtdPnlSampleIndicator) {
+                                 mtdPnlCard.classList.add('has-sample-data');
+                                 mtdPnlSampleIndicator.style.display = 'block';
+                             } else if (mtdPnlCard && mtdPnlSampleIndicator) {
+                                 mtdPnlCard.classList.remove('has-sample-data');
+                                 mtdPnlSampleIndicator.style.display = 'none';
+                             }
+                         }
+                     }
         
         // Update decision support and counter
         function updateDecisionSupport(data) {
@@ -1093,16 +1137,18 @@
                             <div id="cash-available" class="metric-value">Loading...</div>
                             <div id="cash-percentage" class="section-label">--</div>
                         </div>
-                        <div class="metric-card">
-                            <div class="metric-label">Today's P&L</div>
-                            <div id="todays-pnl" class="metric-value">Loading...</div>
-                            <div id="todays-pnl-trades" class="section-label">--</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-label">MTD P&L</div>
-                            <div id="mtd-pnl" class="metric-value">Loading...</div>
-                            <div id="mtd-pnl-percentage" class="section-label">--</div>
-                        </div>
+                                                        <div class="metric-card" id="todays-pnl-card">
+                                    <div class="metric-label">Today's P&L</div>
+                                    <div id="todays-pnl" class="metric-value">Loading...</div>
+                                    <div id="todays-pnl-trades" class="section-label">--</div>
+                                    <div id="todays-pnl-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                                </div>
+                                <div class="metric-card" id="mtd-pnl-card">
+                                    <div class="metric-label">MTD P&L</div>
+                                    <div id="mtd-pnl" class="metric-value">Loading...</div>
+                                    <div id="mtd-pnl-percentage" class="section-label">--</div>
+                                    <div id="mtd-pnl-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                                </div>
                         <div class="metric-card">
                             <div class="metric-label">Total Return</div>
                             <div id="total-return" class="metric-value">Loading...</div>
