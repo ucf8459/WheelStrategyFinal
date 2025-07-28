@@ -4969,6 +4969,10 @@ class WheelDashboard:
                     position_data.append(position_info)
             
             print(f"✅ Successfully processed {len(position_data)} positions")
+            
+            # Cache the position data for Flask threads to use
+            self.cached_positions_data = position_data
+            
             return position_data
             
         except Exception as e:
@@ -5016,101 +5020,74 @@ class WheelDashboard:
             current_thread = threading.current_thread()
             is_main_thread = current_thread is threading.main_thread()
             
-            # Handle Flask threads with synchronous approach (no async calls)
+            # Handle Flask threads - use cached data from background tasks
             if not is_main_thread:
                 try:
-                    # Use the contract as-is (already has exchange from IBKR)
-                    # Request market data for Greeks
-                    ticker = self.monitor.ib.reqMktData(contract, snapshot=False)
+                    if contract_type == 'STK':
+                        return 1.0
                     
-                    # Wait for Greeks to arrive
-                    import time
-                    max_wait = 3.0  # 3 second timeout
-                    wait_interval = 0.1
-                    elapsed = 0
+                    # For Flask threads, look up the delta from the dashboard's cached position data
+                    # This avoids the event loop issue by using data already fetched by background tasks
+                    if hasattr(self, 'cached_positions_data'):
+                        for pos_data in self.cached_positions_data:
+                            if (pos_data.get('symbol') == contract.symbol and 
+                                pos_data.get('contract_type') == 'OPT' and
+                                pos_data.get('strike') == getattr(contract, 'strike', None)):
+                                cached_delta = pos_data.get('delta')
+                                if cached_delta is not None:
+                                    logger.info(f"✅ {contract.symbol}: Using cached delta {cached_delta:.3f}")
+                                    return float(cached_delta)
                     
-                    while elapsed < max_wait:
-                        time.sleep(wait_interval)
-                        elapsed += wait_interval
-                        
-                        # Check for model Greeks
-                        if (hasattr(ticker, 'modelGreeks') and 
-                            ticker.modelGreeks and 
-                            ticker.modelGreeks.delta is not None):
-                            delta_value = ticker.modelGreeks.delta
-                            self.monitor.ib.cancelMktData(contract)
-                            logger.info(f"✅ {contract.symbol}: Flask IBKR delta {delta_value:.3f}")
-                            return float(round(delta_value, 3))
-                    
-                    # Timeout - cancel and return None
-                    self.monitor.ib.cancelMktData(contract)
-                    logger.warning(f"⚠️ {contract.symbol}: Flask Greeks timeout after {max_wait}s")
+                    # If no cached data available, return None to maintain transparency
+                    logger.warning(f"⚠️ {contract.symbol}: No cached delta data available in Flask thread")
                     return None
                     
                 except Exception as e:
                     logger.warning(f"⚠️ {contract.symbol}: Flask delta error: {e}")
                     return None
             
-            # Main thread - use event-driven approach with proper callbacks
+            # Main thread - use simplified approach with proper exchange
             else:
                 try:
-                    # Create properly specified option contract
+                    # Create option contract with proper exchange field
                     from ib_insync import Option
                     option_contract = Option(
                         symbol=contract.symbol,
                         lastTradeDateOrContractMonth=contract.lastTradeDateOrContractMonth,
                         strike=contract.strike,
                         right=contract.right,
-                        exchange='SMART',  # Use SMART routing
+                        exchange=contract.primaryExchange if hasattr(contract, 'primaryExchange') else 'SMART',
                         currency='USD'
                     )
                     
-                    # Qualify the contract
-                    qualified_contracts = self.monitor.ib.qualifyContracts(option_contract)
-                    if not qualified_contracts:
-                        logger.warning(f"⚠️ {contract.symbol}: Main thread qualification failed")
-                        return None
-                    
-                    qualified_contract = qualified_contracts[0]
-                    
-                    # Container for delta result from callbacks
-                    delta_result = {'value': None, 'received': False}
-                    
-                    def option_computation_handler(ticker, tickType, tickAttrib, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice):
-                        """Handle tickOptionComputation events for Greeks"""
-                        if tickType in [10, 11, 12, 13] and delta is not None:  # Option computation tick types
-                            delta_result['value'] = delta
-                            delta_result['received'] = True
-                            logger.info(f"✅ {contract.symbol}: Main thread delta {delta:.3f} from tick {tickType}")
-                    
-                    # Request market data and set up callback for option computations
-                    ticker = self.monitor.ib.reqMktData(qualified_contract, snapshot=False)
-                    
-                    # Connect the callback to ticker events
-                    ticker.updateEvent += option_computation_handler
+                    # Request market data for Greeks
+                    ticker = self.monitor.ib.reqMktData(option_contract, snapshot=False)
                     
                     # Wait for Greeks with timeout
                     import time
-                    max_wait = 3.0  # 3 second timeout
+                    max_wait = 2.0  # 2 second timeout
                     wait_interval = 0.1
                     elapsed = 0
                     
-                    while elapsed < max_wait and not delta_result['received']:
+                    while elapsed < max_wait:
                         time.sleep(wait_interval)
                         elapsed += wait_interval
                         # Process any pending IB events
                         self.monitor.ib.sleep(0.01)
+                        
+                        # Check for model Greeks
+                        if (hasattr(ticker, 'modelGreeks') and 
+                            ticker.modelGreeks and 
+                            ticker.modelGreeks.delta is not None):
+                            delta_value = ticker.modelGreeks.delta
+                            self.monitor.ib.cancelMktData(option_contract)
+                            logger.info(f"✅ {contract.symbol}: Main thread IBKR delta {delta_value:.3f}")
+                            return float(round(delta_value, 3))
                     
-                    # Cleanup
-                    ticker.updateEvent -= option_computation_handler
-                    self.monitor.ib.cancelMktData(qualified_contract)
-                    
-                    if delta_result['received']:
-                        logger.info(f"✅ {contract.symbol}: Main thread final delta {delta_result['value']:.3f}")
-                        return float(round(delta_result['value'], 3))
-                    else:
-                        logger.warning(f"⚠️ {contract.symbol}: Main thread Greeks timeout")
-                        return None
+                    # Timeout - cancel and return None
+                    self.monitor.ib.cancelMktData(option_contract)
+                    logger.warning(f"⚠️ {contract.symbol}: Main thread Greeks timeout")
+                    return None
                         
                 except Exception as e:
                     logger.warning(f"⚠️ {contract.symbol}: Main thread delta error: {e}")
