@@ -57,6 +57,152 @@ class Alert:
     message: str
     action_required: Optional[str] = None
 
+@dataclass
+class Decision:
+    """Track individual trading decisions"""
+    timestamp: datetime
+    symbol: str
+    action_type: str  # 'ROLL', 'CLOSE', 'OPEN', 'ADJUST'
+    reason: str
+    priority: str  # 'CRITICAL', 'IMPORTANT', 'ROUTINE'
+    executed: bool = False
+    result: Optional[str] = None  # 'SUCCESS', 'FAILED', 'PARTIAL'
+    notes: Optional[str] = None
+
+class DecisionCounter:
+    """Track and limit daily trading decisions"""
+    
+    def __init__(self, max_daily_decisions: int = 3):
+        self.max_daily_decisions = max_daily_decisions
+        self.decisions = []
+        self.daily_reset_time = "09:30"  # Market open
+        self._load_decisions()
+    
+    def _load_decisions(self):
+        """Load decisions from persistent storage"""
+        try:
+            # In production, would load from database
+            # For now, start fresh each session
+            self.decisions = []
+        except Exception as e:
+            print(f"Error loading decisions: {e}")
+            self.decisions = []
+    
+    def _save_decisions(self):
+        """Save decisions to persistent storage"""
+        try:
+            # In production, would save to database
+            # For now, just keep in memory
+            pass
+        except Exception as e:
+            print(f"Error saving decisions: {e}")
+    
+    def _reset_daily_count(self):
+        """Reset decision count at market open"""
+        today = datetime.now().date()
+        self.decisions = [d for d in self.decisions if d.timestamp.date() == today]
+    
+    def can_make_decision(self) -> bool:
+        """Check if another decision can be made today"""
+        self._reset_daily_count()
+        return len([d for d in self.decisions if d.executed]) < self.max_daily_decisions
+    
+    def get_remaining_decisions(self) -> int:
+        """Get number of remaining decisions for today"""
+        self._reset_daily_count()
+        executed_today = len([d for d in self.decisions if d.executed])
+        return max(0, self.max_daily_decisions - executed_today)
+    
+    def record_decision(self, symbol: str, action_type: str, reason: str, 
+                       priority: str = 'ROUTINE', executed: bool = False, 
+                       result: Optional[str] = None, notes: Optional[str] = None) -> bool:
+        """Record a new decision"""
+        if not self.can_make_decision() and executed:
+            print(f"❌ DECISION LIMIT REACHED: Cannot execute {action_type} for {symbol}")
+            return False
+        
+        decision = Decision(
+            timestamp=datetime.now(),
+            symbol=symbol,
+            action_type=action_type,
+            reason=reason,
+            priority=priority,
+            executed=executed,
+            result=result,
+            notes=notes
+        )
+        
+        self.decisions.append(decision)
+        self._save_decisions()
+        
+        if executed:
+            print(f"✅ DECISION {len([d for d in self.decisions if d.executed])}/{self.max_daily_decisions}: {action_type} {symbol} - {reason}")
+        else:
+            print(f"📝 DECISION RECORDED: {action_type} {symbol} - {reason}")
+        
+        return True
+    
+    def get_today_decisions(self) -> List[Decision]:
+        """Get all decisions made today"""
+        self._reset_daily_count()
+        return self.decisions
+    
+    def get_decision_summary(self) -> Dict:
+        """Get summary of today's decisions"""
+        today_decisions = self.get_today_decisions()
+        executed = [d for d in today_decisions if d.executed]
+        pending = [d for d in today_decisions if not d.executed]
+        
+        return {
+            'total_made': len(today_decisions),
+            'executed': len(executed),
+            'pending': len(pending),
+            'remaining': self.get_remaining_decisions(),
+            'max_daily': self.max_daily_decisions,
+            'recent_decisions': [
+                {
+                    'time': d.timestamp.strftime('%H:%M'),
+                    'symbol': d.symbol,
+                    'action': d.action_type,
+                    'reason': d.reason,
+                    'priority': d.priority,
+                    'executed': d.executed,
+                    'result': d.result
+                }
+                for d in today_decisions[-5:]  # Last 5 decisions
+            ]
+        }
+    
+    def get_decision_breakdown(self) -> Dict:
+        """Get breakdown of decisions by type and priority"""
+        today_decisions = self.get_today_decisions()
+        
+        breakdown = {
+            'by_type': {},
+            'by_priority': {},
+            'by_result': {}
+        }
+        
+        for decision in today_decisions:
+            # By type
+            if decision.action_type not in breakdown['by_type']:
+                breakdown['by_type'][decision.action_type] = 0
+            breakdown['by_type'][decision.action_type] += 1
+            
+            # By priority
+            if decision.priority not in breakdown['by_priority']:
+                breakdown['by_priority'][decision.priority] = 0
+            breakdown['by_priority'][decision.priority] += 1
+            
+            # By result (for executed decisions)
+            if decision.executed:
+                result = decision.result or 'UNKNOWN'
+                if result not in breakdown['by_result']:
+                    breakdown['by_result'][result] = 0
+                breakdown['by_result'][result] += 1
+        
+        return breakdown
+
 # -------------------------------------------------------------
 # Main Wheel Monitor Class
 # -------------------------------------------------------------
@@ -88,6 +234,9 @@ NEVER trigger stop losses on option P&L percentages!
         self.circuit_breaker_end = None
         self.consecutive_wins = 0
         self.position_size_multiplier = 1.0
+        
+        # Decision tracking system
+        self.decision_counter = DecisionCounter(max_daily_decisions=3)
         
         # Client ID ranges for different components:
         # Monitor: 1000-1999
@@ -3075,23 +3224,61 @@ class DailyWorkflow:
         # Get all adjustments needed
         adjustments = self.monitor.check_adjustments_needed()
         
-        # Limit to 3 decisions per day
-        executed = 0
-        max_decisions = 3
-        
         for adj in adjustments:
-            if executed >= max_decisions:
-                print(f"Daily decision limit reached ({max_decisions})")
+            # Check if we can make another decision today
+            if not self.monitor.decision_counter.can_make_decision():
+                print(f"❌ Daily decision limit reached ({self.monitor.decision_counter.max_daily_decisions})")
                 break
                 
             if adj['priority'] in ['CRITICAL', 'IMPORTANT']:
-                print(f"Executing: {adj['symbol']} - {adj['action']}")
+                print(f"📊 Evaluating: {adj['symbol']} - {adj['action']}")
+                
+                # Record the decision before execution
+                decision_made = self.monitor.decision_counter.record_decision(
+                    symbol=adj['symbol'],
+                    action_type=adj['action'],
+                    reason=adj.get('reason', 'Risk management'),
+                    priority=adj['priority'],
+                    executed=False
+                )
+                
+                if not decision_made:
+                    print(f"❌ Cannot record decision for {adj['symbol']}")
+                    continue
+                
                 # Execute based on action type
-                if 'ROLL' in adj['action']:
-                    self._execute_roll(adj)
-                elif 'CLOSE' in adj['action']:
-                    self._execute_close(adj)
-                executed += 1
+                try:
+                    if 'ROLL' in adj['action']:
+                        result = self._execute_roll(adj)
+                        self.monitor.decision_counter.record_decision(
+                            symbol=adj['symbol'],
+                            action_type=adj['action'],
+                            reason=adj.get('reason', 'Risk management'),
+                            priority=adj['priority'],
+                            executed=True,
+                            result='SUCCESS' if result else 'FAILED'
+                        )
+                    elif 'CLOSE' in adj['action']:
+                        result = self._execute_close(adj)
+                        self.monitor.decision_counter.record_decision(
+                            symbol=adj['symbol'],
+                            action_type=adj['action'],
+                            reason=adj.get('reason', 'Risk management'),
+                            priority=adj['priority'],
+                            executed=True,
+                            result='SUCCESS' if result else 'FAILED'
+                        )
+                except Exception as e:
+                    print(f"❌ Error executing {adj['action']} for {adj['symbol']}: {e}")
+                    self.monitor.decision_counter.record_decision(
+                        symbol=adj['symbol'],
+                        action_type=adj['action'],
+                        reason=adj.get('reason', 'Risk management'),
+                        priority=adj['priority'],
+                        executed=True,
+                        result='FAILED',
+                        notes=f"Error: {str(e)}"
+                    )
     
     def _prepare_next_day_plan(self):
         """Prepare plan for next trading day"""
@@ -4592,7 +4779,36 @@ def get_decision_support():
     try:
         logger.info("Fetching decision support data...")
         
+        # Get decision counter summary
+        decision_summary = dashboard.monitor.decision_counter.get_decision_summary()
+        decision_breakdown = dashboard.monitor.decision_counter.get_decision_breakdown()
+        
         alerts = []
+        
+        # Decision limit alerts
+        if decision_summary['remaining'] <= 1:
+            alerts.append({
+                'priority': 'warning',
+                'title': 'Decision Limit Warning',
+                'message': f"Only {decision_summary['remaining']} decision(s) remaining today",
+                'action_required': 'Conserve decisions for critical situations'
+            })
+        
+        if decision_summary['remaining'] == 0:
+            alerts.append({
+                'priority': 'critical',
+                'title': 'Decision Limit Reached',
+                'message': 'Daily decision limit reached - no more trades today',
+                'action_required': 'Wait until tomorrow for new decisions'
+            })
+        
+        if decision_summary['pending'] > 0:
+            alerts.append({
+                'priority': 'info',
+                'title': 'Pending Decisions',
+                'message': f"{decision_summary['pending']} decision(s) pending execution",
+                'action_required': 'Review and execute pending decisions'
+            })
         
         # Check current VIX level for recommendations
         vix_level = 23.5  # Current VIX from the system
@@ -4650,11 +4866,17 @@ def get_decision_support():
         })
         
         logger.info(f"✅ Generated {len(alerts)} decision support alerts")
-        return jsonify(alerts)
+        
+        # Return comprehensive decision data
+        return jsonify({
+            'decision_summary': decision_summary,
+            'decision_breakdown': decision_breakdown,
+            'alerts': alerts
+        })
         
     except Exception as e:
         logger.error(f"Error getting decision support data: {e}")
-        return jsonify([])
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/status')
 def get_status():

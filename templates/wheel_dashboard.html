@@ -741,6 +741,104 @@
                 daysRemainingElement.textContent = incomeData.days_remaining + ' days remaining';
             }
         }
+        
+        // Update decision support and counter
+        function updateDecisionSupport(data) {
+            if (!data) return;
+            
+            // Update decision counter metrics
+            if (data.decision_summary) {
+                const remaining = document.getElementById('decisions-remaining');
+                const executed = document.getElementById('decisions-executed');
+                const pending = document.getElementById('decisions-pending');
+                
+                if (remaining) remaining.textContent = data.decision_summary.remaining;
+                if (executed) executed.textContent = data.decision_summary.executed;
+                if (pending) pending.textContent = data.decision_summary.pending;
+                
+                // Color code remaining decisions
+                if (remaining) {
+                    if (data.decision_summary.remaining === 0) {
+                        remaining.style.color = 'var(--danger)';
+                    } else if (data.decision_summary.remaining <= 1) {
+                        remaining.style.color = 'var(--warning)';
+                    } else {
+                        remaining.style.color = 'var(--success)';
+                    }
+                }
+            }
+            
+            // Update recent decisions
+            if (data.decision_summary && data.decision_summary.recent_decisions) {
+                const recentDecisions = document.getElementById('recent-decisions');
+                if (recentDecisions) {
+                    if (data.decision_summary.recent_decisions.length === 0) {
+                        recentDecisions.innerHTML = '<div class="section-label">No decisions today</div>';
+                    } else {
+                        const decisionsHtml = data.decision_summary.recent_decisions.map(decision => {
+                            const statusColor = decision.executed ? 
+                                (decision.result === 'SUCCESS' ? 'var(--success)' : 'var(--danger)') : 'var(--warning)';
+                            const statusText = decision.executed ? 
+                                (decision.result === 'SUCCESS' ? '✓' : '✗') : '⏳';
+                            
+                            return `
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #eee;">
+                                    <div>
+                                        <div style="font-weight: bold;">${decision.symbol} - ${decision.action}</div>
+                                        <div style="font-size: 0.8rem; color: #666;">${decision.reason}</div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="color: ${statusColor}; font-weight: bold;">${statusText}</div>
+                                        <div style="font-size: 0.8rem; color: #666;">${decision.time}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                        recentDecisions.innerHTML = decisionsHtml;
+                    }
+                }
+            }
+            
+            // Update decision breakdown
+            if (data.decision_breakdown) {
+                const breakdown = document.getElementById('decision-breakdown');
+                if (breakdown) {
+                    const breakdownHtml = `
+                        <div style="font-size: 0.9rem;">
+                            <div><strong>By Type:</strong> ${Object.entries(data.decision_breakdown.by_type || {}).map(([type, count]) => `${type}: ${count}`).join(', ') || 'None'}</div>
+                            <div><strong>By Priority:</strong> ${Object.entries(data.decision_breakdown.by_priority || {}).map(([priority, count]) => `${priority}: ${count}`).join(', ') || 'None'}</div>
+                            <div><strong>By Result:</strong> ${Object.entries(data.decision_breakdown.by_result || {}).map(([result, count]) => `${result}: ${count}`).join(', ') || 'None'}</div>
+                        </div>
+                    `;
+                    breakdown.innerHTML = breakdownHtml;
+                }
+            }
+            
+            // Update alerts
+            if (data.alerts) {
+                const alertsContainer = document.getElementById('alerts-container');
+                if (alertsContainer) {
+                    if (data.alerts.length === 0) {
+                        alertsContainer.innerHTML = '<div class="section-label">No alerts at this time</div>';
+                    } else {
+                        const alertsHtml = data.alerts.map(alert => {
+                            const priorityClass = alert.priority === 'critical' ? 'alert-danger' : 
+                                                alert.priority === 'warning' ? 'alert-warning' : 
+                                                alert.priority === 'important' ? 'alert-info' : 'alert-info';
+                            
+                            return `
+                                <div class="alert ${priorityClass}">
+                                    <div><strong>${alert.title}</strong></div>
+                                    <div>${alert.message}</div>
+                                    ${alert.action_required ? `<div style="font-size: 0.9rem; margin-top: 0.5rem;"><strong>Action:</strong> ${alert.action_required}</div>` : ''}
+                                </div>
+                            `;
+                        }).join('');
+                        alertsContainer.innerHTML = alertsHtml;
+                    }
+                }
+            }
+        }
 
         // Hide debug banner once data loads
         function hideDebugBanner() {
@@ -898,7 +996,7 @@
                 .then(response => response.json())
                 .then(data => {
                     console.log('Decision support data:', data);
-                    updateDashboard({ alerts: data });
+                    updateDecisionSupport(data);
                 })
                 .catch(error => console.error('Error fetching decision support data:', error));
             
@@ -1007,6 +1105,42 @@
                     
                     <div id="alerts-container" style="margin-bottom: 1rem;">
                         <div class="section-label">Loading alerts...</div>
+                    </div>
+                </div>
+                
+                <!-- Decision Counter -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Daily Decision Counter</h2>
+                    </div>
+                    
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Remaining</div>
+                            <div id="decisions-remaining" class="metric-value">Loading...</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Executed</div>
+                            <div id="decisions-executed" class="metric-value">Loading...</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Pending</div>
+                            <div id="decisions-pending" class="metric-value">Loading...</div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 1rem;">
+                        <div class="section-label">Recent Decisions</div>
+                        <div id="recent-decisions" style="max-height: 200px; overflow-y: auto;">
+                            <div class="section-label">Loading recent decisions...</div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 1rem;">
+                        <div class="section-label">Decision Breakdown</div>
+                        <div id="decision-breakdown">
+                            <div class="section-label">Loading breakdown...</div>
+                        </div>
                     </div>
                 </div>
             </div>
