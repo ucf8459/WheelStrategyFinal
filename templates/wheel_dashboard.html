@@ -311,6 +311,7 @@
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script>
         // Check server status first
         fetch('http://localhost:7001/status')
@@ -468,11 +469,22 @@
                 document.getElementById('total-return').textContent = (data.metrics.total_return * 100).toFixed(1) + '%';
                 document.getElementById('sharpe-ratio').textContent = data.metrics.sharpe_ratio.toFixed(2);
                 
+                // Update VIX and Regime data
+                if (data.metrics.vix_value) {
+                    document.getElementById('vix-value').textContent = data.metrics.vix_value.toFixed(1);
+                    document.getElementById('vix-percentile').textContent = data.metrics.vix_percentile;
+                }
+                
+                if (data.metrics.regime) {
+                    document.getElementById('regime-value').textContent = data.metrics.regime;
+                    document.getElementById('regime-strength').textContent = data.metrics.regime_strength || '';
+                }
+                
                 // Update market regime badge
                 const regimeBadge = document.getElementById('market-regime');
                 regimeBadge.className = 'badge-market ' + 
-                    (data.metrics.regime === 'BULL' ? 'badge-bull' : 
-                     data.metrics.regime === 'BEAR' ? 'badge-bear' : 
+                    (data.metrics.regime === 'BULLISH' ? 'badge-bull' : 
+                     data.metrics.regime === 'BEARISH' ? 'badge-bear' : 
                      'badge-neutral');
                 regimeBadge.textContent = data.metrics.regime;
             }
@@ -527,8 +539,101 @@
                 `Updated: ${now.toLocaleDateString()} - ${now.toLocaleTimeString()} ET`;
         }
         
+        // Portfolio chart variable
+        let portfolioChart = null;
+        
+        // Initialize portfolio chart
+        function initPortfolioChart() {
+            const ctx = document.getElementById('portfolio-chart').getContext('2d');
+            
+            portfolioChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Portfolio Value',
+                        data: [],
+                        borderColor: '#2a9d8f',
+                        backgroundColor: 'rgba(42, 157, 143, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Value: $' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update portfolio chart
+        function updatePortfolioChart(chartData) {
+            if (!portfolioChart || !chartData) return;
+            
+            const labels = chartData.map(point => {
+                const date = new Date(point.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            const values = chartData.map(point => point.value);
+            
+            portfolioChart.data.labels = labels;
+            portfolioChart.data.datasets[0].data = values;
+            portfolioChart.update();
+        }
+        
+        // Update sector exposure
+        function updateSectorExposure(sectorData) {
+            const tbody = document.querySelector('#sector-table tbody');
+            if (!tbody || !sectorData) return;
+            
+            tbody.innerHTML = '';
+            
+            // Show top 3 non-cash sectors
+            const nonCashSectors = sectorData.filter(s => s.sector !== 'Cash').slice(0, 3);
+            
+            nonCashSectors.forEach(sector => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${sector.sector}</td>
+                    <td>
+                        <div class="progress-container">
+                            <div class="progress-bar" style="width: ${sector.percentage}%;"></div>
+                        </div>
+                    </td>
+                    <td>${sector.percentage}%</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
         // Initial data load
         window.onload = function() {
+            // Initialize chart
+            initPortfolioChart();
+            
             // Fetch initial positions
             fetch('/api/positions')
                 .then(response => response.json())
@@ -546,6 +651,24 @@
                     updateDashboard({ metrics: data });
                 })
                 .catch(error => console.error('Error fetching metrics:', error));
+            
+            // Fetch portfolio chart data
+            fetch('/api/portfolio-chart')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Portfolio chart data:', data);
+                    updatePortfolioChart(data);
+                })
+                .catch(error => console.error('Error fetching chart data:', error));
+            
+            // Fetch sector exposure data
+            fetch('/api/sector-exposure')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Sector exposure data:', data);
+                    updateSectorExposure(data);
+                })
+                .catch(error => console.error('Error fetching sector data:', error));
         };
     </script>
 </head>
@@ -606,10 +729,7 @@
                     </div>
                     
                     <div class="chart-container">
-                        <!-- Chart would be rendered here with JavaScript -->
-                        <div style="width:100%; height:100%; background-color:#f0f0f0; display:flex; justify-content:center; align-items:center;">
-                            [Portfolio Performance Chart]
-                        </div>
+                        <canvas id="portfolio-chart"></canvas>
                     </div>
                 </div>
                 
@@ -679,34 +799,12 @@
                         
                         <div style="margin-top: 1rem;">
                             <div class="section-label">Sector Exposure (Top 3)</div>
-                            <table>
-                                <tr>
-                                    <td>Technology</td>
-                                    <td>
-                                        <div class="progress-container">
-                                            <div class="progress-bar" style="width: 40%;"></div>
-                                        </div>
-                                    </td>
-                                    <td>40%</td>
-                                </tr>
-                                <tr>
-                                    <td>Financials</td>
-                                    <td>
-                                        <div class="progress-container">
-                                            <div class="progress-bar" style="width: 20%;"></div>
-                                        </div>
-                                    </td>
-                                    <td>20%</td>
-                                </tr>
-                                <tr>
-                                    <td>Consumer</td>
-                                    <td>
-                                        <div class="progress-container">
-                                            <div class="progress-bar" style="width: 15%;"></div>
-                                        </div>
-                                    </td>
-                                    <td>15%</td>
-                                </tr>
+                            <table id="sector-table">
+                                <tbody>
+                                    <tr>
+                                        <td colspan="3" style="text-align: center;">Loading sector data...</td>
+                                    </tr>
+                                </tbody>
                             </table>
                         </div>
                         
