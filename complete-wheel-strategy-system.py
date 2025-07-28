@@ -4227,90 +4227,72 @@ def get_live_positions():
                 delta_value = 0
                 if contract_type == 'OPT':
                     try:
-                        # Request market data to get Greeks
-                        ticker = dashboard.monitor.ib.reqMktData(contract)
+                        # Create a new event loop for this thread if needed
+                        import asyncio
+                        try:
+                            loop = asyncio.get_event_loop()
+                        except RuntimeError:
+                            # No event loop in this thread, create one
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
                         
-                        # Wait longer for Greeks data to arrive
-                        max_wait_time = 1.0  # Wait up to 1 second
-                        wait_interval = 0.1
-                        elapsed = 0
-                        
-                        while elapsed < max_wait_time:
-                            dashboard.monitor.ib.sleep(wait_interval)
-                            elapsed += wait_interval
-                            
-                            if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
-                                break
-                        
-                        if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
-                            # For short positions, delta should be negative
-                            raw_delta = ticker.modelGreeks.delta
-                            delta_value = float(round(raw_delta * item.position, 3))
-                            logger.info(f"✅ {contract.symbol}: Live delta {raw_delta:.3f}, Position delta {delta_value:.3f}")
-                        else:
-                            # Sophisticated fallback delta estimation based on moneyness
+                        # Use async approach to get Greeks safely
+                        async def get_greeks_async():
                             try:
-                                # Get current stock price for moneyness calculation
-                                stock_ticker = dashboard.monitor.ib.reqMktData(Stock(contract.symbol, 'SMART'))
-                                dashboard.monitor.ib.sleep(0.2)
+                                # Request market data to get Greeks
+                                ticker = dashboard.monitor.ib.reqMktData(contract)
                                 
-                                stock_price = stock_ticker.marketPrice() if stock_ticker.marketPrice() else stock_ticker.close
+                                # Wait for Greeks data to arrive
+                                for _ in range(10):  # Max 1 second wait (10 * 0.1)
+                                    await asyncio.sleep(0.1)
+                                    if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
+                                        break
                                 
-                                if stock_price and strike > 0:
-                                    moneyness = stock_price / strike if option_type == 'C' else strike / stock_price
-                                    
-                                    # Estimate delta based on moneyness and option type
-                                    if option_type == 'P':
-                                        if moneyness > 1.1:  # Deep OTM put
-                                            est_delta = -0.15
-                                        elif moneyness > 1.05:  # OTM put
-                                            est_delta = -0.25
-                                        elif moneyness > 0.95:  # ATM put
-                                            est_delta = -0.45
-                                        else:  # ITM put
-                                            est_delta = -0.65
-                                    else:  # Call option
-                                        if moneyness > 1.1:  # Deep ITM call
-                                            est_delta = 0.85
-                                        elif moneyness > 1.05:  # ITM call
-                                            est_delta = 0.65
-                                        elif moneyness > 0.95:  # ATM call
-                                            est_delta = 0.45
-                                        else:  # OTM call
-                                            est_delta = 0.25
-                                    
-                                    delta_value = float(round(est_delta * item.position, 3))
-                                    logger.info(f"📊 {contract.symbol}: Smart delta estimate {est_delta:.2f} (S={stock_price:.1f}, K={strike}, M={moneyness:.2f}), Position delta {delta_value:.3f}")
-                                else:
-                                    # Basic fallback
-                                    if option_type == 'P':
-                                        delta_value = float(round(item.position * -0.3, 2))
-                                    else:
-                                        delta_value = float(round(item.position * -0.6, 2))
-                                    logger.warning(f"⚠️ {contract.symbol}: Using basic estimated delta {delta_value:.2f}")
-                                
-                                dashboard.monitor.ib.cancelMktData(Stock(contract.symbol, 'SMART'))
-                                
-                            except Exception as delta_est_error:
-                                logger.warning(f"⚠️ {contract.symbol}: Delta estimation failed: {delta_est_error}")
-                                # Basic fallback
-                                if option_type == 'P':
-                                    delta_value = float(round(item.position * -0.3, 2))
-                                else:
-                                    delta_value = float(round(item.position * -0.6, 2))
+                                # Cancel market data request
+                                dashboard.monitor.ib.cancelMktData(contract)
+                                return ticker
+                            except Exception as e:
+                                logger.warning(f"⚠️ Async Greeks error for {contract.symbol}: {e}")
+                                return None
                         
-                        # Cancel market data request to avoid accumulating subscriptions
-                        dashboard.monitor.ib.cancelMktData(contract)
+                        # Run the async function
+                        ticker = None
+                        if loop.is_running():
+                            # Loop is already running, use a different approach
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                # Use a sync approach in a separate thread
+                                def sync_greeks():
+                                    try:
+                                        ticker = dashboard.monitor.ib.reqMktData(contract)
+                                        time.sleep(0.5)  # Brief wait for data
+                                        dashboard.monitor.ib.cancelMktData(contract)
+                                        return ticker
+                                    except:
+                                        return None
+                                future = executor.submit(sync_greeks)
+                                ticker = future.result(timeout=2.0)
+                        else:
+                            # Run async function normally
+                            ticker = loop.run_until_complete(get_greeks_async())
+                        
+                        if ticker and hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
+                            # Use live IBKR delta directly (per contract)
+                            delta_value = float(round(ticker.modelGreeks.delta, 3))
+                            logger.info(f"✅ {contract.symbol}: Live IBKR delta {delta_value:.3f}")
+                        else:
+                            # Fall back to Black-Scholes calculation
+                            delta_value = dashboard._calculate_position_delta(contract, contract_type, option_type, strike, item.position)
                         
                     except Exception as e:
                         logger.warning(f"⚠️ Could not get delta for {contract.symbol}: {e}")
-                        # Fallback to estimated delta
+                        # Fallback to basic delta estimation (per contract)
                         if option_type == 'P':
-                            delta_value = float(round(item.position * -0.3, 2))
+                            delta_value = -0.30
                         elif option_type == 'C':
-                            delta_value = float(round(item.position * -0.6, 2))
+                            delta_value = 0.30
                         else:
-                            delta_value = 0
+                            delta_value = 1.0 if contract_type == 'STK' else 0
                 
                 # Create position data with frontend-expected format
                 position = {
@@ -5058,7 +5040,7 @@ class WheelDashboard:
                         'dte': int(dte),
                         'premium': float(abs(item.averageCost)) if contract_type == 'OPT' else 0,
                         'pnl': float(round(pnl_pct, 1)),
-                        'delta': 0,  # Would need market data subscription
+                        'delta': self._calculate_position_delta(contract, contract_type, option_type, strike, item.position),
                         'status': 'ROLLING' if pnl_pct < -25 else 'ACTIVE'
                     }
                     
@@ -5102,6 +5084,61 @@ class WheelDashboard:
             print(f"Error getting opportunities: {e}")
             return []
     
+    def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
+        """Calculate individual option delta using Black-Scholes approximation"""
+        try:
+            if contract_type != 'OPT':
+                return 1.0 if contract_type == 'STK' else 0  # Stocks have delta of 1
+            
+            # Get current stock price and time to expiration
+            import yfinance as yf
+            from datetime import datetime
+            import math
+            
+            stock_data = yf.Ticker(contract.symbol)
+            stock_price = stock_data.history(period="1d")['Close'].iloc[-1] if not stock_data.history(period="1d").empty else None
+            
+            if not stock_price or strike <= 0:
+                # Fallback based on option type
+                return -0.30 if option_type == 'P' else 0.30
+            
+            # Calculate time to expiration in years
+            try:
+                exp_date = datetime.strptime(contract.lastTradeDateOrContractMonth, '%Y%m%d')
+                dte = (exp_date - datetime.now()).days
+                time_to_exp = max(dte / 365.0, 0.001)  # Minimum 1 day
+            except:
+                time_to_exp = 0.001  # Very short time for expired options
+            
+            # Black-Scholes delta calculation
+            # Using simplified assumptions: r=0.05, iv=0.25
+            r = 0.05  # Risk-free rate
+            sigma = 0.25  # Implied volatility estimate
+            
+            # Calculate d1
+            d1 = (math.log(stock_price / strike) + (r + 0.5 * sigma**2) * time_to_exp) / (sigma * math.sqrt(time_to_exp))
+            
+            # Calculate delta using cumulative normal distribution approximation
+            def norm_cdf(x):
+                """Approximation of cumulative normal distribution"""
+                return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+            
+            if option_type == 'C':
+                delta = norm_cdf(d1)
+            else:  # Put option
+                delta = norm_cdf(d1) - 1.0
+            
+            # Round to 3 decimal places
+            delta = round(delta, 3)
+            
+            logger.info(f"📊 {contract.symbol}: BS Delta {delta:.3f} (S=${stock_price:.1f}, K=${strike}, T={time_to_exp:.3f})")
+            return delta
+                
+        except Exception as delta_error:
+            logger.warning(f"⚠️ {contract.symbol}: Delta calculation failed: {delta_error}")
+            # Basic fallback based on option type only
+            return -0.30 if option_type == 'P' else 0.30
+
     def _get_metrics(self):
         """Get performance metrics"""
         try:
