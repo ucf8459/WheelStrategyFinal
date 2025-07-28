@@ -2775,12 +2775,6 @@ class PerformanceTracker:
                 trade['close_date'] = close_date
                 trade['status'] = 'CLOSED'
                 break
-        
-        # Calculate drawdown
-        running_max = cum_returns.cummax()
-        drawdown = (cum_returns / running_max) - 1
-        
-        return drawdown.min()
     
     def compare_to_benchmark(self, start_date: datetime, end_date: datetime) -> Dict:
         """Compare performance to SPY benchmark"""
