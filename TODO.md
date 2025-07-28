@@ -48,6 +48,7 @@
 - [x] **Month-to-Date (MTD) P&L** - Cumulative realized profits for current month
 - [x] **P&L display in Portfolio Overview** - Add realized P&L metric cards
 - [x] **Trade breakdown display** - Show trade counts, win/loss ratios, percentage of target
+- [x] **Sample data indicators** - Visual indicators to distinguish sample data from real data
 
 #### **3. Position Management Rules** - CRITICAL
 - [ ] **Automatic roll recommendations** - Based on DTE and delta thresholds
