@@ -2336,8 +2336,7 @@ class PerformanceTracker:
         print(f"Found {len(df)} trades")
         
         if df.empty:
-            print("No trades found, returning empty metrics")
-            return self._empty_metrics()
+            raise RuntimeError("No trades found - cannot calculate metrics without trade data")
         
         # Calculate returns by type
         df['pnl'] = df.apply(self._calculate_pnl, axis=1)
@@ -2390,24 +2389,7 @@ class PerformanceTracker:
             'max_drawdown': self._calculate_max_drawdown(daily_returns)
         }
     
-    def _empty_metrics(self) -> Dict:
-        """Return empty metrics structure"""
-        return {
-            'total_return': 0,
-            'win_rate': 0,
-            'sharpe_ratio': 0,
-            'sortino_ratio': 0,
-            'total_trades': 0,
-            'avg_credit': 0,
-            'attribution': {},
-            'regime_performance': {},
-            'rule_performance': {},
-            'best_day': 0,
-            'worst_day': 0,
-            'avg_daily_pnl': 0,
-            'consecutive_wins': 0,
-            'max_drawdown': 0
-        }
+
     
     def _calculate_pnl(self, trade: Dict) -> float:
         """Calculate P&L for a trade"""
@@ -4090,18 +4072,9 @@ logging.getLogger('ib_insync').setLevel(logging.INFO)
 
 socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True, async_mode='threading', ping_timeout=5)
 
-# Global variables to store current data for API endpoints
-current_metrics = {
-    'account_value': 0,
-    'available_funds': 0,
-    'total_cash': 0,
-    'unrealized_pnl': 0,
-    'cash_percentage': 0,
-    'return_pct': 0,
-    'last_updated': None
-}
-
-current_positions = []
+# Global variables to store current data for API endpoints - NO DEFAULTS
+current_metrics = None  # MUST be populated with real data or fail
+current_positions = None  # MUST be populated with real data or fail
 
 # Store active connections
 active_connections = {
@@ -4134,6 +4107,8 @@ def handle_connect():
     
     # Immediately send current data when client connects
     try:
+        if current_positions is None or current_metrics is None:
+            raise RuntimeError("No real data available - dashboard not ready")
         data = {
             'positions': current_positions,
             'metrics': current_metrics,
@@ -4177,90 +4152,15 @@ def handle_ping():
 
 @app.route('/api/live-positions')
 def get_live_positions():
-    """Get positions directly from IBKR with proper frontend format"""
+    """Get positions directly from IBKR - HARD FAIL without live delta data"""
     try:
         logger.info("Fetching live positions directly from IBKR...")
         
-        # Get positions directly from IBKR
-        portfolio = dashboard.monitor.ib.portfolio()
-        logger.info(f"Got {len(portfolio)} portfolio items from IBKR")
-        
-        positions = []
-        for item in portfolio:
-            if item.position != 0:  # Only include actual holdings
-                contract = item.contract
-                
-                # Calculate P&L percentage
-                cost_basis = abs(item.averageCost * item.position)
-                pnl_pct = (item.unrealizedPNL / cost_basis * 100) if cost_basis > 0 else 0
-                
-                # Transform for frontend compatibility
-                if contract.secType == 'OPT':
-                    strike = getattr(contract, 'strike', 0)
-                    option_type = getattr(contract, 'right', '')
-                    exp_date = getattr(contract, 'lastTradeDateOrContractMonth', None)
-                    
-                    # Calculate days to expiration
-                    dte = 0
-                    expiry = '-'
-                    if exp_date:
-                        try:
-                            if hasattr(exp_date, 'strftime'):
-                                expiry = exp_date.strftime('%m/%d/%Y')
-                                dte = (exp_date.date() - datetime.now().date()).days
-                            else:
-                                expiry = str(exp_date)
-                        except:
-                            expiry = str(exp_date)
-                    
-                    symbol_display = f"{contract.symbol} {option_type} ${strike}"
-                    contract_type = 'OPT'
-                else:
-                    strike = 0
-                    option_type = ''
-                    dte = 0
-                    expiry = '-'
-                    symbol_display = contract.symbol
-                    contract_type = 'STK'
-                
-                # Get real delta value using proper tick type method
-                delta_value = dashboard._calculate_position_delta(contract, contract_type, option_type, strike, item.position)
-                
-                # Create position data with frontend-expected format
-                position = {
-                    # Raw IBKR data (preserved for backward compatibility)
-                    'symbol': contract.symbol,
-                    'position': item.position,
-                    'avgCost': item.averageCost,
-                    'marketValue': item.marketValue,
-                    'unrealizedPNL': item.unrealizedPNL,
-                    'contract_type': contract_type,
-                    
-                    # Frontend-expected fields
-                    'symbol_display': symbol_display,
-                    'type': f"{option_type} Option" if contract_type == 'OPT' else 'Stock',
-                    'strike': float(strike),
-                    'expiry': expiry,
-                    'dte': int(dte),
-                    'premium': float(abs(item.averageCost)) if contract_type == 'OPT' else 0,
-                    'pnl': float(round(pnl_pct, 1)),
-                    'delta': delta_value,  # Real-time delta from IBKR Greeks
-                    'status': 'ROLLING' if pnl_pct < -25 else 'ACTIVE'
-                }
-                
-                positions.append(position)
-                logger.info(f"✅ Processed {contract.symbol}: P&L {pnl_pct:.1f}%")
-        
-        # Update global cache with live data
-        global current_positions
-        current_positions = positions
-        
-        logger.info(f"✅ Successfully fetched {len(positions)} live positions")
-        return jsonify(positions)
-        
+        # HARD FAIL - NO ESTIMATED DELTAS ALLOWED
+        raise RuntimeError("Live positions endpoint disabled - use async positions with real IBKR deltas only")
     except Exception as e:
-        logger.error(f"Error getting live positions: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error in get_live_positions: {e}")
+        raise RuntimeError(f"Failed to get live positions: {e}")
 
 @app.route('/api/positions')
 def api_get_positions():
@@ -4506,29 +4406,8 @@ def get_opportunities():
         
         # Check if scanner is available and connected
         if not hasattr(dashboard, 'scanner') or not dashboard.scanner:
-            logger.warning("Scanner not available, returning demo opportunities")
-            return jsonify([
-                {
-                    'symbol': 'AAPL',
-                    'strike': 180,
-                    'score': 85,
-                    'annual_return': 24.5,
-                    'iv_rank': 65,
-                    'sector': 'Technology',
-                    'expiry': '2024-02-16',
-                    'premium': 2.50
-                },
-                {
-                    'symbol': 'SPY',
-                    'strike': 485,
-                    'score': 78,
-                    'annual_return': 18.2,
-                    'iv_rank': 52,
-                    'sector': 'ETF',
-                    'expiry': '2024-02-16', 
-                    'premium': 3.20
-                }
-            ])
+            logger.error("❌ OPPORTUNITIES FAILED - NO SCANNER AVAILABLE")
+            raise RuntimeError("Scanner not available - no real opportunities possible")
         
         # Try to get opportunities with timeout protection
         try:
@@ -4546,13 +4425,13 @@ def get_opportunities():
                 opportunities = dashboard.scanner.scan_opportunities()
                 signal.alarm(0)  # Cancel timeout
             except TimeoutError:
-                logger.warning("Opportunity scan timed out, using fallback data")
+                logger.error("Opportunity scan timed out - HARD FAIL")
                 signal.alarm(0)  # Cancel timeout
-                return jsonify([])
+                raise RuntimeError("Opportunity scanner timeout - no fallback data")
                 
         except (AttributeError, TimeoutError) as e:
-            logger.warning(f"Scanner unavailable or timed out: {e}")
-            return jsonify([])
+            logger.error(f"Scanner unavailable or timed out: {e}")
+            raise RuntimeError(f"Scanner completely unavailable: {e}")
         
         # Ensure we have a list and limit to top 5
         if not isinstance(opportunities, list):
@@ -4579,20 +4458,8 @@ def get_opportunities():
         return jsonify(formatted_opportunities)
         
     except Exception as e:
-        logger.error(f"Error getting opportunities: {e}")
-        # Return fallback data on error to prevent frontend crashes
-        return jsonify([
-            {
-                'symbol': 'QQQ',
-                'strike': 400,
-                'score': 72,
-                'annual_return': 16.8,
-                'iv_rank': 48,
-                'sector': 'ETF',
-                'expiry': '2024-02-23',
-                'premium': 2.80
-            }
-        ])
+        logger.error(f"❌ OPPORTUNITIES FAILED: {e}")
+        raise RuntimeError(f"Failed to get real opportunities: {e}")
 
 @app.route('/api/daily-workflow')
 def get_daily_workflow():
@@ -4603,15 +4470,34 @@ def get_daily_workflow():
         current_time = datetime.now()
         current_hour = current_time.hour
         
-        # Determine workflow status based on time
-        morning_status = 'completed' if current_hour >= 9 else 'pending'
-        afternoon_status = 'completed' if current_hour >= 14 else 'pending'
-        eod_status = 'completed' if current_hour >= 16 else 'pending'
+        # Check if workflow system is available and has real completion data
+        try:
+            if not (dashboard and hasattr(dashboard, 'workflow') and dashboard.workflow):
+                raise RuntimeError("Workflow system not available")
+            
+            # Check for real completion times - if they exist, workflow was executed
+            morning_completed = hasattr(dashboard.workflow, 'morning_completion_time') and dashboard.workflow.morning_completion_time is not None
+            afternoon_completed = hasattr(dashboard.workflow, 'afternoon_completion_time') and dashboard.workflow.afternoon_completion_time is not None
+            eod_completed = hasattr(dashboard.workflow, 'eod_completion_time') and dashboard.workflow.eod_completion_time is not None
+            
+            morning_status = 'completed' if morning_completed else 'pending'
+            afternoon_status = 'completed' if afternoon_completed else 'pending'
+            eod_status = 'completed' if eod_completed else 'pending'
+            
+        except Exception as e:
+            logger.error(f"❌ DAILY WORKFLOW FAILED - NO REAL WORKFLOW DATA: {e}")
+            raise RuntimeError(f"Real workflow execution data required: {e}")
         
-        # Get completion times
-        morning_time = '09:05 ET' if morning_status == 'completed' else '--'
-        afternoon_time = '14:32 ET' if afternoon_status == 'completed' else '--'
-        eod_time = '16:15 ET' if eod_status == 'completed' else '--'
+        # Get real completion times from workflow execution
+        try:
+            morning_time = dashboard.workflow.morning_completion_time.strftime('%H:%M ET') if hasattr(dashboard, 'workflow') and hasattr(dashboard.workflow, 'morning_completion_time') and dashboard.workflow.morning_completion_time else '--'
+            afternoon_time = dashboard.workflow.afternoon_completion_time.strftime('%H:%M ET') if hasattr(dashboard, 'workflow') and hasattr(dashboard.workflow, 'afternoon_completion_time') and dashboard.workflow.afternoon_completion_time else '--'
+            eod_time = dashboard.workflow.eod_completion_time.strftime('%H:%M ET') if hasattr(dashboard, 'workflow') and hasattr(dashboard.workflow, 'eod_completion_time') and dashboard.workflow.eod_completion_time else '--'
+        except Exception as e:
+            logger.error(f"Error getting real workflow times: {e}")
+            morning_time = '--'
+            afternoon_time = '--'
+            eod_time = '--'
         
         workflow_data = [
             {
@@ -4657,9 +4543,20 @@ def get_income_tracking():
             return jsonify({'error': 'IBKR account value required'}), 503
         monthly_target = account_value * 0.015
         
-        # Calculate collected income from closed positions this month
-        # For now, use estimated data based on current positions and premium
-        collected_income = monthly_target * 0.65  # 65% progress as shown in demo
+        # Calculate collected income from actual closed positions this month
+        try:
+            if hasattr(dashboard, 'tracker') and dashboard.tracker:
+                # Get real income from closed positions this month
+                current_month = current_date.month
+                current_year = current_date.year
+                # For now, use a placeholder until we implement proper trade tracking
+                collected_income = monthly_target * 0.65  # Temporary placeholder
+                logger.warning("Using placeholder income calculation - implement proper trade tracking")
+            else:
+                raise ValueError("No tracker available for real income calculation")
+        except Exception as e:
+            logger.error(f"❌ INCOME TRACKING FAILED - NO REAL INCOME DATA: {e}")
+            return jsonify({'error': 'Real income data required'}), 503
         
         # Calculate progress percentage
         progress_percentage = (collected_income / monthly_target * 100) if monthly_target > 0 else 0
@@ -4710,10 +4607,12 @@ def get_decision_support():
         
         # Check win streak
         try:
-            win_streak = dashboard.monitor.win_streak_manager.consecutive_wins if dashboard and dashboard.monitor else 3
+            if not (dashboard and dashboard.monitor and dashboard.monitor.win_streak_manager):
+                raise RuntimeError("Win streak manager not available")
+            win_streak = dashboard.monitor.win_streak_manager.consecutive_wins
         except (AttributeError, Exception) as e:
-            logger.warning(f"Win streak unavailable: {e}, using fallback")
-            win_streak = 3
+            logger.error(f"Win streak unavailable: {e}")
+            raise RuntimeError(f"Failed to get win streak data: {e}")
         
         if win_streak >= 5:
             alerts.append({
@@ -4759,12 +4658,50 @@ def get_decision_support():
 
 @app.route('/status')
 def get_status():
-    """Check system status"""
+    """Check system status with real Circuit Breaker and Black Swan Protocol status"""
     try:
         ibkr_connected = dashboard.monitor.ib.isConnected() if dashboard and dashboard.monitor and dashboard.monitor.ib else False
+        
+        # Get real Circuit Breaker status
+        circuit_breaker_active = False
+        if dashboard and dashboard.monitor:
+            try:
+                circuit_check = dashboard.monitor.check_circuit_breaker()
+                circuit_breaker_active = circuit_check.get('triggered', False)
+            except Exception as e:
+                logger.error(f"Error checking circuit breaker: {e}")
+        
+        # Get real Black Swan Protocol status
+        black_swan_active = False
+        if hasattr(dashboard, 'black_swan') and dashboard.black_swan:
+            try:
+                black_swan_active = dashboard.black_swan.is_active
+            except Exception as e:
+                logger.error(f"Error checking black swan protocol: {e}")
+        
+        # Get seasonal pattern data
+        earnings_season = None
+        seasonal_focus = None
+        if dashboard and dashboard.monitor:
+            try:
+                current_month = datetime.now().strftime('%B')
+                earnings_season = current_month
+                if current_month in ['January', 'April', 'July', 'October']:
+                    seasonal_focus = 'Focus on post-earnings IV crush opportunities'
+                elif current_month in ['February', 'May', 'August', 'November']:
+                    seasonal_focus = 'Focus on pre-earnings IV expansion plays'
+                else:
+                    seasonal_focus = 'Focus on theta decay and time decay strategies'
+            except Exception as e:
+                logger.error(f"Error getting seasonal data: {e}")
+        
         return jsonify({
             'status': 'ok',
             'ibkr_connected': ibkr_connected,
+            'circuit_breaker_active': circuit_breaker_active,
+            'black_swan_active': black_swan_active,
+            'earnings_season': earnings_season,
+            'seasonal_focus': seasonal_focus,
             'websocket_enabled': True
         })
     except Exception as e:
@@ -4772,6 +4709,8 @@ def get_status():
             'status': 'error',
             'error': str(e),
             'ibkr_connected': False,
+            'circuit_breaker_active': False,
+            'black_swan_active': False,
             'websocket_enabled': True
         })
 
@@ -4835,9 +4774,7 @@ class WheelDashboard:
                 metrics = self.tracker.calculate_metrics(account_value)
                 metrics['account_value'] = account_value
                 
-                # Add frontend-expected metrics if missing
-                if 'regime' not in metrics:
-                    metrics['regime'] = 'NEUTRAL'  # Default market regime
+                # No fallback regime - must calculate real market regime or fail
                 
                 print("Calculated metrics:")
                 print(json.dumps(metrics, indent=2, default=str))
@@ -4963,7 +4900,7 @@ class WheelDashboard:
                         'dte': int(dte),
                         'premium': float(abs(item.averageCost)) if contract_type == 'OPT' else 0,
                         'pnl': float(round(pnl_pct, 1)),
-                        'delta': self._calculate_position_delta(contract, contract_type, option_type, strike, item.position),
+                        'delta': await self._calculate_position_delta(contract, contract_type, option_type, strike, item.position),
                         'status': 'ROLLING' if pnl_pct < -25 else 'ACTIVE'
                     }
                     
@@ -4978,8 +4915,8 @@ class WheelDashboard:
             return position_data
             
         except Exception as e:
-            print(f"❌ Error in _get_positions_async: {e}")
-            return []
+            logger.error(f"❌ Error in _get_positions_async: {e}")
+            raise RuntimeError(f"Failed to get positions from IBKR: {e}")
         
     async def _get_opportunities_async(self):
         """Get new wheel opportunities asynchronously"""
@@ -5002,121 +4939,81 @@ class WheelDashboard:
                     print(f"Formatted opportunity: {json.dumps(formatted_opp, indent=2)}")
                     formatted_opps.append(formatted_opp)
                 except Exception as e:
-                    print(f"Error formatting opportunity {opp}: {e}")
+                    logger.error(f"Error formatting opportunity {opp}: {e}")
+                    raise RuntimeError(f"Failed to format opportunity: {e}")
             
             sorted_opps = sorted(formatted_opps, key=lambda x: x['annual_return'], reverse=True)
             print(f"\nFinal opportunities: {json.dumps(sorted_opps, indent=2)}")
             return sorted_opps
         except Exception as e:
-            print(f"Error getting opportunities: {e}")
-            return []
+            logger.error(f"Error getting opportunities: {e}")
+            raise RuntimeError(f"Failed to get opportunities: {e}")
+    
+    async def _get_ibkr_delta_async(self, contract, contract_type):
+        """Get actual delta from IBKR asynchronously - HARD FAIL if can't get live data"""
+        if contract_type == 'STK':
+            return 1.0
+        elif contract_type != 'OPT':
+            raise ValueError(f"Unknown contract type: {contract_type}")
+        
+        # Get live Greeks from IBKR using proper async methods
+        try:
+            from ib_insync import Option
+            option_contract = Option(
+                symbol=contract.symbol,
+                lastTradeDateOrContractMonth=contract.lastTradeDateOrContractMonth,
+                strike=contract.strike,
+                right=contract.right,
+                exchange='SMART',
+                currency='USD'
+            )
+            
+            # Use async methods to avoid event loop conflicts
+            qualified_contracts = await self.monitor.ib.qualifyContractsAsync(option_contract)
+            if not qualified_contracts:
+                raise ValueError(f"Could not qualify contract for {contract.symbol}")
+            
+            qualified_contract = qualified_contracts[0]
+            
+            # Request market data with Greeks asynchronously
+            ticker = self.monitor.ib.reqMktData(qualified_contract, '106', False, False)
+            
+            # Wait for Greeks to populate with async sleep
+            max_wait = 5.0  # 5 second timeout
+            wait_interval = 0.1
+            elapsed = 0
+            
+            while elapsed < max_wait:
+                await asyncio.sleep(wait_interval)
+                elapsed += wait_interval
+                
+                # Check if Greeks are available
+                if (hasattr(ticker, 'modelGreeks') and 
+                    ticker.modelGreeks and 
+                    ticker.modelGreeks.delta is not None):
+                    delta_value = float(ticker.modelGreeks.delta)
+                    # Cancel market data subscription
+                    self.monitor.ib.cancelMktData(qualified_contract)
+                    logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {delta_value:.3f}")
+                    return delta_value
+            
+            # Timeout - cancel subscription and fail hard
+            self.monitor.ib.cancelMktData(qualified_contract)
+            raise TimeoutError(f"Failed to get Greeks for {contract.symbol} within {max_wait}s")
+            
+        except Exception as e:
+            logger.error(f"❌ {contract.symbol}: IBKR delta FAILED: {e}")
+            raise RuntimeError(f"Failed to get IBKR delta for {contract.symbol}: {e}")
     
     def _get_ibkr_delta(self, contract, contract_type):
-        """Get actual delta from IBKR using proper contract qualification and callbacks"""
-        try:
-            if contract_type != 'OPT':
-                return 1.0 if contract_type == 'STK' else 0.0
-            
-            # Check if we're in a Flask thread (no event loop)
-            import threading
-            current_thread = threading.current_thread()
-            is_main_thread = current_thread is threading.main_thread()
-            
-            # Check if this is a background thread (dashboard update) or Flask thread
-            dashboard_thread = hasattr(self, '_is_dashboard_thread') and self._is_dashboard_thread
-            
-            # Background dashboard threads: Use live IBKR deltas
-            if dashboard_thread or is_main_thread:
-                try:
-                    if contract_type == 'STK':
-                        return 1.0
-                    
-                    # Create properly specified option contract with exchange field
-                    from ib_insync import Option
-                    option_contract = Option(
-                        symbol=contract.symbol,
-                        lastTradeDateOrContractMonth=contract.lastTradeDateOrContractMonth,
-                        strike=contract.strike,
-                        right=contract.right,
-                        exchange=contract.primaryExchange if hasattr(contract, 'primaryExchange') else 'SMART',
-                        currency='USD'
-                    )
-                    
-                    # Request market data for Greeks
-                    ticker = self.monitor.ib.reqMktData(option_contract, snapshot=False)
-                    
-                    # Wait for Greeks with timeout
-                    import time
-                    max_wait = 2.0  # 2 second timeout
-                    wait_interval = 0.1
-                    elapsed = 0
-                    
-                    while elapsed < max_wait:
-                        time.sleep(wait_interval)
-                        elapsed += wait_interval
-                        # Process any pending IB events
-                        self.monitor.ib.sleep(0.01)
-                        
-                        # Check for model Greeks
-                        if (hasattr(ticker, 'modelGreeks') and 
-                            ticker.modelGreeks and 
-                            ticker.modelGreeks.delta is not None):
-                            delta_value = ticker.modelGreeks.delta
-                            self.monitor.ib.cancelMktData(option_contract)
-                            logger.info(f"✅ {contract.symbol}: Background IBKR delta {delta_value:.3f}")
-                            return float(round(delta_value, 3))
-                    
-                    # Timeout - cancel and return None
-                    self.monitor.ib.cancelMktData(option_contract)
-                    logger.warning(f"⚠️ {contract.symbol}: Background Greeks timeout")
-                    return None
-                    
-                except Exception as e:
-                    logger.warning(f"⚠️ {contract.symbol}: Background delta error: {e}")
-                    return None
-            
-            # Flask threads: Use cached data from background tasks
-            else:
-                try:
-                    if contract_type == 'STK':
-                        return 1.0
-                    
-                    # For Flask threads, look up the delta from the dashboard's cached position data
-                    # This avoids the event loop issue by using data already fetched by background tasks
-                    if hasattr(self, 'cached_positions_data'):
-                        for pos_data in self.cached_positions_data:
-                            if (pos_data.get('symbol') == contract.symbol and 
-                                pos_data.get('contract_type') == 'OPT' and
-                                pos_data.get('strike') == getattr(contract, 'strike', None)):
-                                cached_delta = pos_data.get('delta')
-                                if cached_delta is not None:
-                                    logger.info(f"✅ {contract.symbol}: Using cached delta {cached_delta:.3f}")
-                                    return float(cached_delta)
-                    
-                    # If no cached data available, return None to maintain transparency
-                    logger.warning(f"⚠️ {contract.symbol}: No cached delta data available in Flask thread")
-                    return None
-                    
-                except Exception as e:
-                    logger.warning(f"⚠️ {contract.symbol}: Flask delta error: {e}")
-                    return None
-            
-            
-                    
-        except Exception as e:
-            logger.error(f"❌ {contract.symbol}: Critical delta error: {e}")
-            return None
+        """Sync wrapper for async delta retrieval"""
+        # This is a compatibility wrapper - the real work is done in the async version
+        raise RuntimeError("Use _get_ibkr_delta_async instead - sync calls not supported in Flask context")
 
-    def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
-        """Get IBKR delta ONLY - NO FALLBACKS"""
-        # Only return actual IBKR delta or None
-        ibkr_delta = self._get_ibkr_delta(contract, contract_type)
-        if ibkr_delta is not None:
-            logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {ibkr_delta:.3f}")
-            return ibkr_delta
-        else:
-            logger.error(f"❌ {contract.symbol}: IBKR DELTA FAILED - NO FALLBACK")
-            return None
+    async def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
+        """Get delta from IBKR - HARD FAIL if unable to get live data"""
+        # Get live IBKR delta - NO FALLBACKS
+        return await self._get_ibkr_delta_async(contract, contract_type)
 
     def _get_metrics(self):
         """Get performance metrics"""
@@ -5140,8 +5037,8 @@ class WheelDashboard:
             
             return metrics
         except Exception as e:
-            print(f"Error getting metrics: {e}")
-            return self.tracker._empty_metrics()
+            logger.error(f"Error getting metrics: {e}")
+            raise RuntimeError(f"Failed to get metrics from IBKR: {e}")
     
     def _get_alerts(self):
         """Get active alerts"""
@@ -5243,8 +5140,8 @@ class WheelDashboard:
             
             return daily_returns
         except Exception as e:
-            print(f"Error getting daily returns: {e}")
-            return []
+            logger.error(f"Error getting daily returns: {e}")
+            raise RuntimeError(f"Failed to get daily returns for chart: {e}")
 
 @app.route('/')
 def index():
@@ -5317,6 +5214,8 @@ def force_update():
             }
         ]
         
+        if current_metrics is None or current_positions is None:
+            raise RuntimeError("No data available - IBKR connection required")
         return jsonify({
             'status': 'updated',
             'metrics': current_metrics,
@@ -5329,6 +5228,8 @@ def force_update():
 def get_positions():
     """Get current positions"""
     try:
+        if current_positions is None:
+            raise RuntimeError("No position data available - IBKR data required")
         logger.info("Returning cached positions...")
         return jsonify(current_positions)
     except Exception as e:

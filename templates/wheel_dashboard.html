@@ -533,10 +533,8 @@
                 });
             }
             
-            // Update last update time
-            const now = new Date();
-            document.getElementById('last-update').textContent = 
-                `Updated: ${now.toLocaleDateString()} - ${now.toLocaleTimeString()} ET`;
+            // NO FAKE TIMESTAMPS - Only show real server data
+            // Last update time will be populated by server or show "No Data"
         }
         
         // Portfolio chart variable
@@ -757,15 +755,57 @@
             fetch('/status')
                 .then(response => response.json())
                 .then(data => {
-                    const statusDot = document.querySelector('.status-dot');
-                    const statusText = document.querySelector('.status-indicator span');
+                    // Update main system status
+                    const systemStatusDot = document.getElementById('system-status-dot');
+                    const systemStatusText = document.getElementById('system-status-text');
                     
                     if (data.ibkr_connected) {
-                        statusDot.className = 'status-dot status-active';
-                        statusText.textContent = 'IBKR Connected';
+                        systemStatusDot.className = 'status-dot status-active';
+                        systemStatusText.textContent = 'System Active';
                     } else {
-                        statusDot.className = 'status-dot status-inactive';
-                        statusText.textContent = 'IBKR Disconnected';
+                        systemStatusDot.className = 'status-dot status-inactive';
+                        systemStatusText.textContent = 'System Inactive';
+                    }
+                    
+                    // Update Circuit Breaker status
+                    const circuitBreakerStatus = document.getElementById('circuit-breaker-status');
+                    if (data.circuit_breaker_active) {
+                        circuitBreakerStatus.textContent = 'ACTIVE';
+                        circuitBreakerStatus.style.color = 'var(--danger)';
+                    } else {
+                        circuitBreakerStatus.textContent = 'Inactive';
+                        circuitBreakerStatus.style.color = 'var(--success)';
+                    }
+                    
+                    // Update Black Swan Protocol status
+                    const blackSwanStatus = document.getElementById('black-swan-status');
+                    if (data.black_swan_active) {
+                        blackSwanStatus.textContent = 'ACTIVE';
+                        blackSwanStatus.style.color = 'var(--danger)';
+                    } else {
+                        blackSwanStatus.textContent = 'Inactive';
+                        blackSwanStatus.style.color = 'var(--success)';
+                    }
+                    
+                    // Update API Connection status
+                    const apiConnectionStatus = document.getElementById('api-connection-status');
+                    if (data.ibkr_connected) {
+                        apiConnectionStatus.textContent = 'Connected';
+                        apiConnectionStatus.style.color = 'var(--success)';
+                    } else {
+                        apiConnectionStatus.textContent = 'Disconnected';
+                        apiConnectionStatus.style.color = 'var(--danger)';
+                    }
+                    
+                    // Update seasonal pattern data
+                    const earningsSeason = document.getElementById('earnings-season');
+                    const seasonalFocus = document.getElementById('seasonal-focus');
+                    if (data.earnings_season) {
+                        earningsSeason.textContent = `Earnings Season: ${data.earnings_season}`;
+                        seasonalFocus.textContent = data.seasonal_focus || 'Loading...';
+                    } else {
+                        earningsSeason.textContent = 'Loading...';
+                        seasonalFocus.textContent = 'Loading...';
                     }
                 })
                 .catch(error => console.error('Error fetching status:', error));
@@ -873,8 +913,8 @@
             <h1>Wheel Strategy Dashboard</h1>
         </div>
         <div class="status-indicator">
-            <div class="status-dot status-active"></div>
-            <span>System Active</span>
+            <div class="status-dot" id="system-status-dot"></div>
+            <span id="system-status-text">Loading...</span>
         </div>
     </header>
     <!-- DEBUG BANNER - Hidden by default, shown only during initial loading -->
@@ -890,7 +930,7 @@
                     <div class="card-header">
                         <h2>Portfolio Overview</h2>
                         <div>
-                            <span id="market-regime" class="badge-market badge-neutral">NEUTRAL</span>
+                            <span id="market-regime" class="badge-market badge-neutral">Loading...</span>
                             <span id="last-update" class="section-label">Updated: Loading...</span>
                         </div>
                     </div>
@@ -1005,8 +1045,8 @@
                         
                         <div style="margin-top: 1rem;">
                             <div class="section-label">Seasonal Pattern</div>
-                            <div style="font-weight: bold;">Earnings Season: July</div>
-                            <div>Focus on post-earnings IV crush opportunities</div>
+                            <div id="earnings-season" style="font-weight: bold;">Loading...</div>
+                            <div id="seasonal-focus">Loading...</div>
                         </div>
                     </div>
                     
@@ -1059,19 +1099,19 @@
                             <div class="metric-grid">
                                 <div class="metric-card">
                                     <div class="metric-label">Circuit Breaker</div>
-                                    <div class="metric-value" style="color: var(--success);">Inactive</div>
+                                    <div class="metric-value" id="circuit-breaker-status">Loading...</div>
                                 </div>
                                 <div class="metric-card">
                                     <div class="metric-label">Black Swan Protocol</div>
-                                    <div class="metric-value" style="color: var(--success);">Inactive</div>
+                                    <div class="metric-value" id="black-swan-status">Loading...</div>
                                 </div>
                                 <div class="metric-card">
                                     <div class="metric-label">API Connection</div>
-                                    <div class="metric-value" style="color: var(--success);">Connected</div>
+                                    <div class="metric-value" id="api-connection-status">Loading...</div>
                                 </div>
                                 <div class="metric-card">
                                     <div class="metric-label">Last Update</div>
-                                    <div class="metric-value">14:35 ET</div>
+                                    <div class="metric-value" id="last-update">NO DATA</div>
                                 </div>
                             </div>
                         </div>
