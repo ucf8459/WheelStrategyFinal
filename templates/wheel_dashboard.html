@@ -629,10 +629,155 @@
             });
         }
 
+        // Update win streak management
+        function updateWinStreak(winStreakData) {
+            if (!winStreakData) return;
+            
+            // Update consecutive wins count
+            const countElement = document.getElementById('win-streak-count');
+            if (countElement) {
+                countElement.textContent = winStreakData.consecutive_wins || '0';
+            }
+            
+            // Update win streak message
+            const messageElement = document.getElementById('win-streak-message');
+            if (messageElement) {
+                messageElement.textContent = winStreakData.message || 'Loading...';
+            }
+            
+            // Update risk check
+            const riskElement = document.getElementById('win-streak-risk');
+            if (riskElement) {
+                riskElement.textContent = winStreakData.risk_check || 'Loading...';
+            }
+            
+            // Update alert styling based on risk level
+            const alertElement = document.getElementById('win-streak-alert');
+            if (alertElement && winStreakData.alert_type) {
+                alertElement.className = `alert alert-${winStreakData.alert_type}`;
+            }
+        }
+
+        // Update opportunities
+        function updateOpportunities(opportunitiesData) {
+            const container = document.getElementById('opportunities-container');
+            if (!container) return;
+            
+            if (!opportunitiesData || opportunitiesData.length === 0) {
+                container.innerHTML = '<div class="section-label">No opportunities found</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            opportunitiesData.forEach(opp => {
+                const div = document.createElement('div');
+                div.className = 'opportunity-card';
+                div.innerHTML = `
+                    <div class="opportunity-details">
+                        <div class="opportunity-symbol">${opp.symbol} $${opp.strike} Put</div>
+                        <div>Score: ${opp.score || 0} | Sector: ${opp.sector || 'Unknown'}</div>
+                    </div>
+                    <div class="opportunity-return">${(opp.annual_return || 0).toFixed(1)}% Annualized</div>
+                    <button class="btn btn-primary btn-sm">Trade</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // Update daily workflow
+        function updateDailyWorkflow(workflowData) {
+            const tbody = document.querySelector('#workflow-table tbody');
+            if (!tbody || !workflowData) return;
+            
+            tbody.innerHTML = '';
+            
+            workflowData.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.name}</td>
+                    <td><span class="badge ${item.badge_class}">${item.status.charAt(0).toUpperCase() + item.status.slice(1)}</span></td>
+                    <td>${item.time}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Update income tracking
+        function updateIncomeTracking(incomeData) {
+            if (!incomeData) return;
+            
+            // Update monthly target
+            const monthlyTargetElement = document.getElementById('monthly-target');
+            if (monthlyTargetElement) {
+                monthlyTargetElement.textContent = '$' + incomeData.monthly_target.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
+            }
+            
+            // Update target percentage
+            const targetPercentageElement = document.getElementById('target-percentage');
+            if (targetPercentageElement) {
+                targetPercentageElement.textContent = incomeData.target_percentage_text;
+            }
+            
+            // Update collected income
+            const collectedIncomeElement = document.getElementById('collected-income');
+            if (collectedIncomeElement) {
+                collectedIncomeElement.textContent = '$' + incomeData.collected_income.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
+            }
+            
+            // Update progress text
+            const progressTextElement = document.getElementById('progress-text');
+            if (progressTextElement) {
+                progressTextElement.textContent = incomeData.progress_text;
+            }
+            
+            // Update progress bar
+            const progressBarElement = document.getElementById('progress-bar');
+            if (progressBarElement) {
+                progressBarElement.style.width = incomeData.progress_percentage + '%';
+            }
+            
+            // Update days remaining
+            const daysRemainingElement = document.getElementById('days-remaining');
+            if (daysRemainingElement) {
+                daysRemainingElement.textContent = incomeData.days_remaining + ' days remaining';
+            }
+        }
+
+        // Hide debug banner once data loads
+        function hideDebugBanner() {
+            const banner = document.getElementById('debug-banner');
+            if (banner) {
+                banner.style.display = 'none';
+            }
+        }
+
+        // Update system status with live data
+        function updateSystemStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDot = document.querySelector('.status-dot');
+                    const statusText = document.querySelector('.status-indicator span');
+                    
+                    if (data.ibkr_connected) {
+                        statusDot.className = 'status-dot status-active';
+                        statusText.textContent = 'IBKR Connected';
+                    } else {
+                        statusDot.className = 'status-dot status-inactive';
+                        statusText.textContent = 'IBKR Disconnected';
+                    }
+                })
+                .catch(error => console.error('Error fetching status:', error));
+        }
+
         // Initial data load
         window.onload = function() {
             // Initialize chart
             initPortfolioChart();
+            
+            // Update system status
+            updateSystemStatus();
             
             // Fetch initial positions
             fetch('/api/positions')
@@ -640,6 +785,7 @@
                 .then(data => {
                     console.log('Initial positions:', data);
                     updateDashboard({ positions: data });
+                    hideDebugBanner(); // Hide once we get real data
                 })
                 .catch(error => console.error('Error fetching positions:', error));
             
@@ -649,6 +795,7 @@
                 .then(data => {
                     console.log('Initial metrics:', data);
                     updateDashboard({ metrics: data });
+                    hideDebugBanner(); // Hide once we get real data
                 })
                 .catch(error => console.error('Error fetching metrics:', error));
             
@@ -669,6 +816,54 @@
                     updateSectorExposure(data);
                 })
                 .catch(error => console.error('Error fetching sector data:', error));
+            
+            // Fetch win streak data
+            fetch('/api/win-streak')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Win streak data:', data);
+                    updateWinStreak(data);
+                })
+                .catch(error => console.error('Error fetching win streak data:', error));
+            
+            // Fetch opportunities data
+            fetch('/api/opportunities')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Opportunities data:', data);
+                    updateOpportunities(data);
+                })
+                .catch(error => console.error('Error fetching opportunities data:', error));
+            
+            // Fetch daily workflow data
+            fetch('/api/daily-workflow')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Daily workflow data:', data);
+                    updateDailyWorkflow(data);
+                })
+                .catch(error => console.error('Error fetching daily workflow data:', error));
+            
+            // Fetch income tracking data
+            fetch('/api/income-tracking')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Income tracking data:', data);
+                    updateIncomeTracking(data);
+                })
+                .catch(error => console.error('Error fetching income tracking data:', error));
+            
+            // Fetch decision support data
+            fetch('/api/decision-support')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Decision support data:', data);
+                    updateDashboard({ alerts: data });
+                })
+                .catch(error => console.error('Error fetching decision support data:', error));
+            
+            // Update system status every 30 seconds
+            setInterval(updateSystemStatus, 30000);
         };
     </script>
 </head>
@@ -682,9 +877,9 @@
             <span>System Active</span>
         </div>
     </header>
-    <!-- DEBUG BANNER -->
-    <div id="debug-banner" style="background: #ffeeba; color: #856404; padding: 8px; font-size: 0.9rem; border-bottom: 1px solid #ffeeba; font-family: monospace; overflow-x: auto; white-space: pre;">
-        Waiting for live data...
+    <!-- DEBUG BANNER - Hidden by default, shown only during initial loading -->
+    <div id="debug-banner" style="background: #ffeeba; color: #856404; padding: 8px; font-size: 0.9rem; border-bottom: 1px solid #ffeeba; font-family: monospace; overflow-x: auto; white-space: pre; display: none;">
+        Loading data...
     </div>
     
     <div class="container">
@@ -821,18 +1016,18 @@
                         </div>
                         
                         <div style="display: flex; align-items: center;">
-                            <div style="font-size: 2rem; font-weight: bold; margin-right: 1rem;">7</div>
+                            <div id="win-streak-count" style="font-size: 2rem; font-weight: bold; margin-right: 1rem;">Loading...</div>
                             <div>
                                 <div>Consecutive Wins</div>
-                                <div class="section-label">No size adjustment needed yet</div>
+                                <div id="win-streak-message" class="section-label">Loading...</div>
                             </div>
                         </div>
                         
                         <div style="margin-top: 1rem;">
                             <div class="section-label">Risk Check</div>
-                            <div class="alert alert-info">
+                            <div id="win-streak-alert" class="alert alert-info">
                                 <div>
-                                    <strong>No risk creep detected</strong> - All positions within guidelines
+                                    <strong id="win-streak-risk">Loading...</strong>
                                 </div>
                             </div>
                         </div>
@@ -883,22 +1078,12 @@
                         
                         <div>
                             <div class="section-label">Daily Workflow</div>
-                            <table>
-                                <tr>
-                                    <td>Morning Routine</td>
-                                    <td><span class="badge badge-success">Completed</span></td>
-                                    <td>09:05 ET</td>
-                                </tr>
-                                <tr>
-                                    <td>Afternoon Check-in</td>
-                                    <td><span class="badge badge-success">Completed</span></td>
-                                    <td>14:32 ET</td>
-                                </tr>
-                                <tr>
-                                    <td>EOD Routine</td>
-                                    <td><span class="badge badge-info">Pending</span></td>
-                                    <td>16:15 ET</td>
-                                </tr>
+                            <table id="workflow-table">
+                                <tbody>
+                                    <tr>
+                                        <td colspan="3" style="text-align: center;">Loading workflow status...</td>
+                                    </tr>
+                                </tbody>
                             </table>
                         </div>
                     </div>
@@ -911,22 +1096,22 @@
                         <div class="metric-grid">
                             <div class="metric-card">
                                 <div class="metric-label">Monthly Target</div>
-                                <div class="metric-value">$3,750</div>
-                                <div class="section-label">1.5% of capital</div>
+                                <div id="monthly-target" class="metric-value">Loading...</div>
+                                <div id="target-percentage" class="section-label">Loading...</div>
                             </div>
                             <div class="metric-card">
                                 <div class="metric-label">Collected</div>
-                                <div class="metric-value">$2,450</div>
-                                <div class="section-label">65% of target</div>
+                                <div id="collected-income" class="metric-value">Loading...</div>
+                                <div id="progress-text" class="section-label">Loading...</div>
                             </div>
                         </div>
                         
                         <div style="margin-top: 1rem;">
                             <div class="section-label">Progress to Goal</div>
                             <div class="progress-container">
-                                <div class="progress-bar" style="width: 65%;"></div>
+                                <div id="progress-bar" class="progress-bar" style="width: 0%;"></div>
                             </div>
-                            <div class="section-label" style="text-align: right;">13 days remaining</div>
+                            <div id="days-remaining" class="section-label" style="text-align: right;">Loading...</div>
                         </div>
                     </div>
                 </div>
