@@ -5006,73 +5006,118 @@ class WheelDashboard:
             return []
     
     def _get_ibkr_delta(self, contract, contract_type):
-        """Get actual delta from IBKR using proper tick types for Greek computations"""
+        """Get actual delta from IBKR using proper contract qualification and callbacks"""
         try:
             if contract_type != 'OPT':
                 return 1.0 if contract_type == 'STK' else 0.0
             
-            # Add exchange info to contract for proper validation
-            option_contract = contract
-            if not hasattr(contract, 'exchange') or not contract.exchange:
-                from ib_insync import Option
-                option_contract = Option(
-                    symbol=contract.symbol,
-                    lastTradeDateOrContractMonth=contract.lastTradeDateOrContractMonth,
-                    strike=contract.strike,
-                    right=contract.right,
-                    exchange='SMART',  # Use SMART routing
-                    currency='USD'
-                )
+            # Check if we're in a Flask thread (no event loop)
+            import threading
+            current_thread = threading.current_thread()
+            is_main_thread = current_thread is threading.main_thread()
             
-            # Create a container to store the delta value
-            delta_result = {'value': None, 'received': False}
+            # Handle Flask threads with synchronous approach (no async calls)
+            if not is_main_thread:
+                try:
+                    # Use the contract as-is (already has exchange from IBKR)
+                    # Request market data for Greeks
+                    ticker = self.monitor.ib.reqMktData(contract, snapshot=False)
+                    
+                    # Wait for Greeks to arrive
+                    import time
+                    max_wait = 3.0  # 3 second timeout
+                    wait_interval = 0.1
+                    elapsed = 0
+                    
+                    while elapsed < max_wait:
+                        time.sleep(wait_interval)
+                        elapsed += wait_interval
+                        
+                        # Check for model Greeks
+                        if (hasattr(ticker, 'modelGreeks') and 
+                            ticker.modelGreeks and 
+                            ticker.modelGreeks.delta is not None):
+                            delta_value = ticker.modelGreeks.delta
+                            self.monitor.ib.cancelMktData(contract)
+                            logger.info(f"✅ {contract.symbol}: Flask IBKR delta {delta_value:.3f}")
+                            return float(round(delta_value, 3))
+                    
+                    # Timeout - cancel and return None
+                    self.monitor.ib.cancelMktData(contract)
+                    logger.warning(f"⚠️ {contract.symbol}: Flask Greeks timeout after {max_wait}s")
+                    return None
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ {contract.symbol}: Flask delta error: {e}")
+                    return None
             
-            def on_tick_option_computation(ticker, tickType, tickId, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice):
-                """Callback for option computation ticks containing Greeks"""
-                if tickType in [10, 11, 12, 13] and delta is not None:  # Bid/Ask/Last/Model Option Computation
-                    delta_result['value'] = delta
-                    delta_result['received'] = True
-                    logger.info(f"✅ {contract.symbol}: Received IBKR delta {delta:.3f} from tick type {tickType}")
-            
-            # Subscribe to market data with specific tick types for Greeks
-            # Tick types: 10=Bid Option, 11=Ask Option, 12=Last Option, 13=Model Option Computation
-            generic_tick_list = "100,101,104,105,106,107,165,166,225,233,236,258"  # Greek computation ticks
-            ticker = self.monitor.ib.reqMktData(
-                option_contract, 
-                genericTickList=generic_tick_list,
-                snapshot=False
-            )
-            
-            # Set up the callback for option computation
-            original_callback = getattr(ticker, 'tickOptionComputation', None)
-            ticker.tickOptionComputation = lambda *args: on_tick_option_computation(ticker, *args)
-            
-            # Wait for Greeks data with timeout
-            import time
-            max_wait = 5.0  # 5 second timeout for Greek computation
-            wait_interval = 0.1
-            elapsed = 0
-            
-            while elapsed < max_wait and not delta_result['received']:
-                time.sleep(wait_interval)
-                elapsed += wait_interval
-                # Process any pending events
-                self.monitor.ib.sleep(0.01)
-            
-            # Clean up subscription
-            if original_callback:
-                ticker.tickOptionComputation = original_callback
-            self.monitor.ib.cancelMktData(option_contract)
-            
-            if delta_result['received']:
-                logger.info(f"✅ {contract.symbol}: Live IBKR delta {delta_result['value']:.3f}")
-                return float(round(delta_result['value'], 3))
+            # Main thread - use event-driven approach with proper callbacks
             else:
-                logger.warning(f"⚠️ {contract.symbol}: IBKR Delta timeout - no Greek computation received")
-                return None
-                
+                try:
+                    # Create properly specified option contract
+                    from ib_insync import Option
+                    option_contract = Option(
+                        symbol=contract.symbol,
+                        lastTradeDateOrContractMonth=contract.lastTradeDateOrContractMonth,
+                        strike=contract.strike,
+                        right=contract.right,
+                        exchange='SMART',  # Use SMART routing
+                        currency='USD'
+                    )
+                    
+                    # Qualify the contract
+                    qualified_contracts = self.monitor.ib.qualifyContracts(option_contract)
+                    if not qualified_contracts:
+                        logger.warning(f"⚠️ {contract.symbol}: Main thread qualification failed")
+                        return None
+                    
+                    qualified_contract = qualified_contracts[0]
+                    
+                    # Container for delta result from callbacks
+                    delta_result = {'value': None, 'received': False}
+                    
+                    def option_computation_handler(ticker, tickType, tickAttrib, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice):
+                        """Handle tickOptionComputation events for Greeks"""
+                        if tickType in [10, 11, 12, 13] and delta is not None:  # Option computation tick types
+                            delta_result['value'] = delta
+                            delta_result['received'] = True
+                            logger.info(f"✅ {contract.symbol}: Main thread delta {delta:.3f} from tick {tickType}")
+                    
+                    # Request market data and set up callback for option computations
+                    ticker = self.monitor.ib.reqMktData(qualified_contract, snapshot=False)
+                    
+                    # Connect the callback to ticker events
+                    ticker.updateEvent += option_computation_handler
+                    
+                    # Wait for Greeks with timeout
+                    import time
+                    max_wait = 3.0  # 3 second timeout
+                    wait_interval = 0.1
+                    elapsed = 0
+                    
+                    while elapsed < max_wait and not delta_result['received']:
+                        time.sleep(wait_interval)
+                        elapsed += wait_interval
+                        # Process any pending IB events
+                        self.monitor.ib.sleep(0.01)
+                    
+                    # Cleanup
+                    ticker.updateEvent -= option_computation_handler
+                    self.monitor.ib.cancelMktData(qualified_contract)
+                    
+                    if delta_result['received']:
+                        logger.info(f"✅ {contract.symbol}: Main thread final delta {delta_result['value']:.3f}")
+                        return float(round(delta_result['value'], 3))
+                    else:
+                        logger.warning(f"⚠️ {contract.symbol}: Main thread Greeks timeout")
+                        return None
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ {contract.symbol}: Main thread delta error: {e}")
+                    return None
+                    
         except Exception as e:
-            logger.warning(f"⚠️ {contract.symbol}: IBKR Delta error: {e}")
+            logger.error(f"❌ {contract.symbol}: Critical delta error: {e}")
             return None
 
     def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
