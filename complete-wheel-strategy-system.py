@@ -4896,6 +4896,8 @@ class WheelDashboard:
             
     async def _get_positions_async(self):
         """Get all positions with analytics asynchronously"""
+        # Mark this as a dashboard thread for delta fetching
+        self._is_dashboard_thread = True
         position_data = []
         
         try:
@@ -5020,36 +5022,16 @@ class WheelDashboard:
             current_thread = threading.current_thread()
             is_main_thread = current_thread is threading.main_thread()
             
-            # Handle Flask threads - use cached data from background tasks
-            if not is_main_thread:
+            # Check if this is a background thread (dashboard update) or Flask thread
+            dashboard_thread = hasattr(self, '_is_dashboard_thread') and self._is_dashboard_thread
+            
+            # Background dashboard threads: Use live IBKR deltas
+            if dashboard_thread or is_main_thread:
                 try:
                     if contract_type == 'STK':
                         return 1.0
                     
-                    # For Flask threads, look up the delta from the dashboard's cached position data
-                    # This avoids the event loop issue by using data already fetched by background tasks
-                    if hasattr(self, 'cached_positions_data'):
-                        for pos_data in self.cached_positions_data:
-                            if (pos_data.get('symbol') == contract.symbol and 
-                                pos_data.get('contract_type') == 'OPT' and
-                                pos_data.get('strike') == getattr(contract, 'strike', None)):
-                                cached_delta = pos_data.get('delta')
-                                if cached_delta is not None:
-                                    logger.info(f"✅ {contract.symbol}: Using cached delta {cached_delta:.3f}")
-                                    return float(cached_delta)
-                    
-                    # If no cached data available, return None to maintain transparency
-                    logger.warning(f"⚠️ {contract.symbol}: No cached delta data available in Flask thread")
-                    return None
-                    
-                except Exception as e:
-                    logger.warning(f"⚠️ {contract.symbol}: Flask delta error: {e}")
-                    return None
-            
-            # Main thread - use simplified approach with proper exchange
-            else:
-                try:
-                    # Create option contract with proper exchange field
+                    # Create properly specified option contract with exchange field
                     from ib_insync import Option
                     option_contract = Option(
                         symbol=contract.symbol,
@@ -5081,17 +5063,45 @@ class WheelDashboard:
                             ticker.modelGreeks.delta is not None):
                             delta_value = ticker.modelGreeks.delta
                             self.monitor.ib.cancelMktData(option_contract)
-                            logger.info(f"✅ {contract.symbol}: Main thread IBKR delta {delta_value:.3f}")
+                            logger.info(f"✅ {contract.symbol}: Background IBKR delta {delta_value:.3f}")
                             return float(round(delta_value, 3))
                     
                     # Timeout - cancel and return None
                     self.monitor.ib.cancelMktData(option_contract)
-                    logger.warning(f"⚠️ {contract.symbol}: Main thread Greeks timeout")
+                    logger.warning(f"⚠️ {contract.symbol}: Background Greeks timeout")
                     return None
-                        
+                    
                 except Exception as e:
-                    logger.warning(f"⚠️ {contract.symbol}: Main thread delta error: {e}")
+                    logger.warning(f"⚠️ {contract.symbol}: Background delta error: {e}")
                     return None
+            
+            # Flask threads: Use cached data from background tasks
+            else:
+                try:
+                    if contract_type == 'STK':
+                        return 1.0
+                    
+                    # For Flask threads, look up the delta from the dashboard's cached position data
+                    # This avoids the event loop issue by using data already fetched by background tasks
+                    if hasattr(self, 'cached_positions_data'):
+                        for pos_data in self.cached_positions_data:
+                            if (pos_data.get('symbol') == contract.symbol and 
+                                pos_data.get('contract_type') == 'OPT' and
+                                pos_data.get('strike') == getattr(contract, 'strike', None)):
+                                cached_delta = pos_data.get('delta')
+                                if cached_delta is not None:
+                                    logger.info(f"✅ {contract.symbol}: Using cached delta {cached_delta:.3f}")
+                                    return float(cached_delta)
+                    
+                    # If no cached data available, return None to maintain transparency
+                    logger.warning(f"⚠️ {contract.symbol}: No cached delta data available in Flask thread")
+                    return None
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ {contract.symbol}: Flask delta error: {e}")
+                    return None
+            
+            
                     
         except Exception as e:
             logger.error(f"❌ {contract.symbol}: Critical delta error: {e}")
