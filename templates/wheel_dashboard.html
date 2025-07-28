@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wheel Strategy Dashboard</title>
+    <style>
+        /* Global Styles */
+        :root {
+            --primary: #3a506b;
+            --secondary: #5bc0be;
+            --accent: #ffa62b;
+            --danger: #e63946;
+            --success: #2a9d8f;
+            --warning: #f4a261;
+            --light: #edf2f4;
+            --dark: #1d3557;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--dark);
+        }
+        
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 1rem;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-rows: auto auto auto;
+            gap: 1rem;
+        }
+        
+        .sidebar {
+            display: grid;
+            grid-template-rows: auto auto;
+            gap: 1rem;
+        }
+        
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        
+        .status-active {
+            background-color: var(--success);
+        }
+        
+        .status-warning {
+            background-color: var(--warning);
+        }
+        
+        .status-danger {
+            background-color: var(--danger);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        table th, table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        table th {
+            background-color: var(--light);
+            color: var(--dark);
+        }
+        
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .badge-success {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .badge-warning {
+            background-color: var(--warning);
+            color: white;
+        }
+        
+        .badge-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .badge-info {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .metric-card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 0.5rem 0;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .alert {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .alert-critical {
+            background-color: rgba(230, 57, 70, 0.1);
+            border-left: 4px solid var(--danger);
+        }
+        
+        .alert-important {
+            background-color: rgba(244, 162, 97, 0.1);
+            border-left: 4px solid var(--warning);
+        }
+        
+        .alert-info {
+            background-color: rgba(91, 192, 190, 0.1);
+            border-left: 4px solid var(--secondary);
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .btn-success {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .badge-market {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 0.5rem;
+        }
+        
+        .badge-bull {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .badge-bear {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .badge-neutral {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .opportunity-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background-color: rgba(91, 192, 190, 0.1);
+            border-radius: 4px;
+        }
+        
+        .opportunity-details {
+            flex-grow: 1;
+        }
+        
+        .opportunity-symbol {
+            font-weight: bold;
+        }
+        
+        .opportunity-return {
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        .date-selector {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .date-selector select {
+            margin-left: 0.5rem;
+            padding: 0.25rem;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        
+        .progress-container {
+            width: 100%;
+            height: 10px;
+            background-color: #eee;
+            border-radius: 5px;
+            margin-top: 0.5rem;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            border-radius: 5px;
+            background-color: var(--success);
+        }
+        
+        .chart-container {
+            height: 200px;
+            margin-top: 1rem;
+        }
+        
+        .section-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        // Check server status first
+        fetch('http://localhost:7001/status')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Server status:', data);
+                if (data.status === 'ok') {
+                            // Connect to WebSocket with explicit URL and options
+        const socket = io(window.location.origin, {
+            transports: ['websocket'],
+            upgrade: false,
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000,
+            pingInterval: 10000,
+            pingTimeout: 5000
+        });
+        
+        // Start ping/pong
+        function startPing() {
+            setInterval(() => {
+                console.log('Sending ping to server');
+                socket.emit('ping');
+            }, 10000);
+        }
+                    initializeSocket(socket);
+                } else {
+                    console.error('Server not ready');
+                    document.querySelector('.status-dot').className = 'status-dot status-danger';
+                }
+            })
+            .catch(error => {
+                console.error('Error checking server status:', error);
+                document.querySelector('.status-dot').className = 'status-dot status-danger';
+            });
+            
+        function initializeSocket(socket) {
+                    // Socket.IO connection handling
+        socket.on('connect', () => {
+            console.log('=== Connected to WebSocket ===');
+            console.log('Transport:', socket.io.engine.transport.name);
+            console.log('Protocol:', socket.io.engine.protocol);
+            console.log('Session ID:', socket.id);
+            document.querySelector('.status-dot').className = 'status-dot status-active';
+            startPing();  // Start ping/pong when connected
+        });
+        
+        socket.on('disconnect', (reason) => {
+            console.log('=== Disconnected from WebSocket ===');
+            console.log('Reason:', reason);
+            console.log('Transport:', socket.io.engine.transport.name);
+            console.log('Session ID:', socket.id);
+            document.querySelector('.status-dot').className = 'status-dot status-danger';
+        });
+        
+        socket.on('connect_error', (error) => {
+            console.error('=== WebSocket Connection Error ===');
+            console.error('Error:', error);
+            console.error('Transport:', socket.io.engine ? socket.io.engine.transport.name : 'unknown');
+            console.error('Session ID:', socket.id);
+            document.querySelector('.status-dot').className = 'status-dot status-danger';
+        });
+        
+        socket.on('error', (error) => {
+            console.error('=== Socket.IO Error ===');
+            console.error('Error:', error);
+            console.error('Transport:', socket.io.engine.transport.name);
+            console.error('Session ID:', socket.id);
+            document.querySelector('.status-dot').className = 'status-dot status-danger';
+        });
+        
+        socket.on('reconnect_attempt', (attemptNumber) => {
+            console.log('=== Attempting to Reconnect ===');
+            console.log('Attempt number:', attemptNumber);
+            console.log('Transport:', socket.io.engine ? socket.io.engine.transport.name : 'unknown');
+            console.log('Session ID:', socket.id);
+            document.querySelector('.status-dot').className = 'status-dot status-warning';
+        });
+        
+        socket.on('reconnect', (attemptNumber) => {
+            console.log('=== Reconnected ===');
+            console.log('After attempts:', attemptNumber);
+            console.log('Transport:', socket.io.engine.transport.name);
+            console.log('Session ID:', socket.id);
+            document.querySelector('.status-dot').className = 'status-dot status-active';
+            startPing();  // Restart ping/pong after reconnection
+        });
+        
+        socket.on('pong', () => {
+            console.log('=== Received Pong ===');
+            console.log('Transport:', socket.io.engine.transport.name);
+            console.log('Session ID:', socket.id);
+        });
+        
+        socket.on('status', (data) => {
+            console.log('=== Status Update ===');
+            console.log('Status:', data);
+            console.log('Transport:', socket.io.engine.transport.name);
+            console.log('Session ID:', socket.id);
+        });
+            
+            // Handle real-time updates
+            socket.on('update', function(data) {
+                console.log('Received update:', data);
+                document.getElementById('debug-banner').textContent = JSON.stringify(data, null, 2);
+                updateDashboard(data);
+            });
+        }
+        
+        // Update dashboard with live data
+        function updateDashboard(data) {
+            console.log('Updating dashboard with data:', data);
+            
+            // Update positions
+            if (data.positions) {
+                console.log('Updating positions:', data.positions);
+                console.log('Current positions table:', document.querySelector('#positions-table tbody').innerHTML);
+                const tbody = document.querySelector('#positions-table tbody');
+                tbody.innerHTML = '';
+                
+                data.positions.forEach(pos => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${pos.symbol}</td>
+                        <td>${pos.type}</td>
+                        <td>${pos.strike ? '$' + pos.strike.toFixed(2) : '-'}</td>
+                        <td>${pos.expiry || '-'}</td>
+                        <td>${pos.dte || '-'}</td>
+                        <td>${pos.premium ? '$' + pos.premium.toFixed(2) : '-'}</td>
+                        <td>
+                            <span class="badge ${pos.pnl >= 0 ? 'badge-success' : 'badge-warning'}">
+                                ${pos.pnl > 0 ? '+' : ''}${pos.pnl}%
+                            </span>
+                        </td>
+                        <td>${pos.delta || '-'}</td>
+                        <td>
+                            ${pos.status === 'ROLLING' ? '<button class="btn btn-danger btn-sm">Roll (Defensive)</button>' :
+                              pos.status === 'CLOSING' ? '<button class="btn btn-success btn-sm">Close</button>' :
+                              pos.status === 'ACTIVE' ? '<button class="btn btn-secondary btn-sm">Monitor</button>' :
+                              '<button class="btn btn-primary btn-sm">View</button>'}
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+            
+            // Update metrics
+            if (data.metrics) {
+                document.getElementById('account-value').textContent = '$' + data.metrics.account_value.toLocaleString();
+                document.getElementById('cash-available').textContent = '$' + data.metrics.available_funds.toLocaleString();
+                document.getElementById('cash-percentage').textContent = data.metrics.cash_percentage.toFixed(1) + '% of Portfolio';
+                document.getElementById('win-rate').textContent = (data.metrics.win_rate * 100).toFixed(0) + '%';
+                document.getElementById('total-return').textContent = (data.metrics.total_return * 100).toFixed(1) + '%';
+                document.getElementById('sharpe-ratio').textContent = data.metrics.sharpe_ratio.toFixed(2);
+                
+                // Update market regime badge
+                const regimeBadge = document.getElementById('market-regime');
+                regimeBadge.className = 'badge-market ' + 
+                    (data.metrics.regime === 'BULL' ? 'badge-bull' : 
+                     data.metrics.regime === 'BEAR' ? 'badge-bear' : 
+                     'badge-neutral');
+                regimeBadge.textContent = data.metrics.regime;
+            }
+            
+            // Update opportunities
+            if (data.opportunities) {
+                const container = document.getElementById('opportunities-container');
+                container.innerHTML = '';
+                
+                data.opportunities.forEach(opp => {
+                    const div = document.createElement('div');
+                    div.className = 'opportunity-card';
+                    div.innerHTML = `
+                        <div class="opportunity-details">
+                            <div class="opportunity-symbol">${opp.symbol} $${opp.strike} Put</div>
+                            <div>Score: ${opp.score}</div>
+                        </div>
+                        <div class="opportunity-return">${opp.annual_return.toFixed(1)}% Annualized</div>
+                        <button class="btn btn-primary btn-sm">Trade</button>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            // Update alerts
+            if (data.alerts) {
+                const container = document.getElementById('alerts-container');
+                container.innerHTML = '';
+                
+                data.alerts.forEach(alert => {
+                    const div = document.createElement('div');
+                    div.className = `alert alert-${alert.priority.toLowerCase()}`;
+                    div.innerHTML = `
+                        <div>
+                            <strong>${alert.priority}:</strong> ${alert.message}
+                        </div>
+                        <div style="margin-left: auto;">
+                            <button class="btn btn-${alert.priority === 'CRITICAL' ? 'danger' : 
+                                                    alert.priority === 'IMPORTANT' ? 'warning' : 
+                                                    'secondary'} btn-sm">
+                                Take Action
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            // Update last update time
+            const now = new Date();
+            document.getElementById('last-update').textContent = 
+                `Updated: ${now.toLocaleDateString()} - ${now.toLocaleTimeString()} ET`;
+        }
+        
+        // Initial data load
+        window.onload = function() {
+            // Fetch initial positions
+            fetch('/api/positions')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Initial positions:', data);
+                    updateDashboard({ positions: data });
+                })
+                .catch(error => console.error('Error fetching positions:', error));
+            
+            // Fetch initial metrics
+            fetch('/api/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Initial metrics:', data);
+                    updateDashboard({ metrics: data });
+                })
+                .catch(error => console.error('Error fetching metrics:', error));
+        };
+    </script>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <h1>Wheel Strategy Dashboard</h1>
+        </div>
+        <div class="status-indicator">
+            <div class="status-dot status-active"></div>
+            <span>System Active</span>
+        </div>
+    </header>
+    <!-- DEBUG BANNER -->
+    <div id="debug-banner" style="background: #ffeeba; color: #856404; padding: 8px; font-size: 0.9rem; border-bottom: 1px solid #ffeeba; font-family: monospace; overflow-x: auto; white-space: pre;">
+        Waiting for live data...
+    </div>
+    
+    <div class="container">
+        <div class="dashboard-grid">
+            <div class="main-content">
+                <!-- Portfolio Overview -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Portfolio Overview</h2>
+                        <div>
+                            <span id="market-regime" class="badge-market badge-neutral">NEUTRAL</span>
+                            <span id="last-update" class="section-label">Updated: Loading...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Account Value</div>
+                            <div id="account-value" class="metric-value">Loading...</div>
+                            <div id="daily-change" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Cash Available</div>
+                            <div id="cash-available" class="metric-value">Loading...</div>
+                            <div id="cash-percentage" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Total Return</div>
+                            <div id="total-return" class="metric-value">Loading...</div>
+                            <div class="section-label">Since Inception</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Sharpe Ratio</div>
+                            <div id="sharpe-ratio" class="metric-value">Loading...</div>
+                            <div class="section-label">Risk-Adjusted Return</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Win Rate</div>
+                            <div id="win-rate" class="metric-value">Loading...</div>
+                            <div class="section-label">Last 30 Days</div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <!-- Chart would be rendered here with JavaScript -->
+                        <div style="width:100%; height:100%; background-color:#f0f0f0; display:flex; justify-content:center; align-items:center;">
+                            [Portfolio Performance Chart]
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Active Positions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Active Positions</h2>
+                        <div>
+                            <button class="btn btn-secondary btn-sm" onclick="window.location.reload()">Refresh</button>
+                        </div>
+                    </div>
+                    
+                    <table id="positions-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Strike</th>
+                                <th>Expiry</th>
+                                <th>DTE</th>
+                                <th>Premium</th>
+                                <th>P&L %</th>
+                                <th>Delta</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="9" style="text-align: center;">Loading positions...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Decision Support -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Decision Support</h2>
+                    </div>
+                    
+                    <div id="alerts-container" style="margin-bottom: 1rem;">
+                        <div class="section-label">Loading alerts...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="sidebar">
+                <!-- Market Conditions -->
+                <div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Market Conditions</h2>
+                        </div>
+                        
+                        <div class="metric-grid">
+                            <div class="metric-card">
+                                <div class="metric-label">VIX</div>
+                                <div id="vix-value" class="metric-value">Loading...</div>
+                                <div id="vix-percentile" class="section-label">--</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">Regime</div>
+                                <div id="regime-value" class="metric-value">Loading...</div>
+                                <div id="regime-strength" class="section-label">--</div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 1rem;">
+                            <div class="section-label">Sector Exposure (Top 3)</div>
+                            <table>
+                                <tr>
+                                    <td>Technology</td>
+                                    <td>
+                                        <div class="progress-container">
+                                            <div class="progress-bar" style="width: 40%;"></div>
+                                        </div>
+                                    </td>
+                                    <td>40%</td>
+                                </tr>
+                                <tr>
+                                    <td>Financials</td>
+                                    <td>
+                                        <div class="progress-container">
+                                            <div class="progress-bar" style="width: 20%;"></div>
+                                        </div>
+                                    </td>
+                                    <td>20%</td>
+                                </tr>
+                                <tr>
+                                    <td>Consumer</td>
+                                    <td>
+                                        <div class="progress-container">
+                                            <div class="progress-bar" style="width: 15%;"></div>
+                                        </div>
+                                    </td>
+                                    <td>15%</td>
+                                </tr>
+                            </table>
+                        </div>
+                        
+                        <div style="margin-top: 1rem;">
+                            <div class="section-label">Seasonal Pattern</div>
+                            <div style="font-weight: bold;">Earnings Season: July</div>
+                            <div>Focus on post-earnings IV crush opportunities</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Win Streak Management</h2>
+                        </div>
+                        
+                        <div style="display: flex; align-items: center;">
+                            <div style="font-size: 2rem; font-weight: bold; margin-right: 1rem;">7</div>
+                            <div>
+                                <div>Consecutive Wins</div>
+                                <div class="section-label">No size adjustment needed yet</div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 1rem;">
+                            <div class="section-label">Risk Check</div>
+                            <div class="alert alert-info">
+                                <div>
+                                    <strong>No risk creep detected</strong> - All positions within guidelines
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Opportunity Scanner</h2>
+                        </div>
+                        
+                        <div id="opportunities-container">
+                            <div class="section-label">Loading opportunities...</div>
+                        </div>
+                        
+                        <div style="margin-top: 1rem; text-align: center;">
+                            <button class="btn btn-secondary">View All Opportunities</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- System Status -->
+                <div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>System Status</h2>
+                        </div>
+                        
+                        <div style="margin-bottom: 1rem;">
+                            <div class="metric-grid">
+                                <div class="metric-card">
+                                    <div class="metric-label">Circuit Breaker</div>
+                                    <div class="metric-value" style="color: var(--success);">Inactive</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-label">Black Swan Protocol</div>
+                                    <div class="metric-value" style="color: var(--success);">Inactive</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-label">API Connection</div>
+                                    <div class="metric-value" style="color: var(--success);">Connected</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-label">Last Update</div>
+                                    <div class="metric-value">14:35 ET</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="section-label">Daily Workflow</div>
+                            <table>
+                                <tr>
+                                    <td>Morning Routine</td>
+                                    <td><span class="badge badge-success">Completed</span></td>
+                                    <td>09:05 ET</td>
+                                </tr>
+                                <tr>
+                                    <td>Afternoon Check-in</td>
+                                    <td><span class="badge badge-success">Completed</span></td>
+                                    <td>14:32 ET</td>
+                                </tr>
+                                <tr>
+                                    <td>EOD Routine</td>
+                                    <td><span class="badge badge-info">Pending</span></td>
+                                    <td>16:15 ET</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Income Tracking</h2>
+                        </div>
+                        
+                        <div class="metric-grid">
+                            <div class="metric-card">
+                                <div class="metric-label">Monthly Target</div>
+                                <div class="metric-value">$3,750</div>
+                                <div class="section-label">1.5% of capital</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">Collected</div>
+                                <div class="metric-value">$2,450</div>
+                                <div class="section-label">65% of target</div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 1rem;">
+                            <div class="section-label">Progress to Goal</div>
+                            <div class="progress-container">
+                                <div class="progress-bar" style="width: 65%;"></div>
+                            </div>
+                            <div class="section-label" style="text-align: right;">13 days remaining</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
