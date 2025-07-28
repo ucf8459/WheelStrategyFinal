@@ -2448,7 +2448,31 @@ class TradeExecutor:
         # Execute order
         trade = self.monitor.ib.placeOrder(contract, order)
         
-        self.logger.info(f"Closed {contract.symbol} position. Reason: {reason}")
+        # Calculate realized P&L
+        realized_pnl = 0
+        if hasattr(position, 'avgCost') and position.avgCost is not None:
+            if contract.secType == 'OPT':
+                # For options, P&L is the difference between premium received and premium paid
+                if position.position < 0:  # Short position
+                    realized_pnl = (position.avgCost - price) * abs(position.position) * 100
+                else:  # Long position
+                    realized_pnl = (price - position.avgCost) * abs(position.position) * 100
+            elif contract.secType == 'STK':
+                # For stock, P&L is the difference between sale price and cost basis
+                if position.position > 0:  # Long position
+                    realized_pnl = (price - position.avgCost) * abs(position.position)
+                else:  # Short position
+                    realized_pnl = (position.avgCost - price) * abs(position.position)
+        
+        # Record realized P&L in tracker if available
+        if hasattr(self.monitor, 'tracker') and self.monitor.tracker:
+            self.monitor.tracker.record_realized_pnl(
+                trade_id=str(trade.order.orderId),
+                realized_pnl=realized_pnl,
+                close_date=datetime.now()
+            )
+        
+        self.logger.info(f"Closed {contract.symbol} position. Reason: {reason}. Realized P&L: ${realized_pnl:.2f}")
         
         return {
             'symbol': contract.symbol,
@@ -2456,7 +2480,9 @@ class TradeExecutor:
             'quantity': abs(position.position),
             'price': price,
             'reason': reason,
-            'trade_id': trade.order.orderId
+            'trade_id': trade.order.orderId,
+            'realized_pnl': realized_pnl,
+            'close_date': datetime.now()
         }
 
 # -------------------------------------------------------------
@@ -2470,6 +2496,8 @@ class PerformanceTracker:
         self.trades = []
         self.closed_positions = []
         self.tax_lots = {}
+        self.realized_pnl_history = []
+        self.unrealized_pnl_history = []
         
     def log_trade(self, trade: Dict):
         """Log executed trade for tracking"""
@@ -2618,6 +2646,81 @@ class PerformanceTracker:
             
         # Calculate cumulative returns
         cum_returns = (1 + daily_returns).cumprod()
+        
+    def get_realized_pnl(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Dict:
+        """Get realized P&L for specified period"""
+        if not start_date:
+            start_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)  # Start of current month
+        if not end_date:
+            end_date = datetime.now()
+            
+        # Filter trades by date range
+        filtered_trades = [
+            trade for trade in self.trades 
+            if start_date <= trade.get('timestamp', datetime.now()) <= end_date
+            and trade.get('status') == 'CLOSED'
+        ]
+        
+        realized_pnl = sum(trade.get('realized_pnl', 0) for trade in filtered_trades)
+        
+        return {
+            'realized_pnl': realized_pnl,
+            'trade_count': len(filtered_trades),
+            'winning_trades': len([t for t in filtered_trades if t.get('realized_pnl', 0) > 0]),
+            'losing_trades': len([t for t in filtered_trades if t.get('realized_pnl', 0) < 0]),
+            'start_date': start_date,
+            'end_date': end_date
+        }
+    
+    def get_todays_realized_pnl(self) -> Dict:
+        """Get today's realized P&L"""
+        today = datetime.now().date()
+        start_of_day = datetime.combine(today, datetime.min.time())
+        end_of_day = datetime.combine(today, datetime.max.time())
+        
+        return self.get_realized_pnl(start_of_day, end_of_day)
+    
+    def get_mtd_realized_pnl(self) -> Dict:
+        """Get month-to-date realized P&L"""
+        current_month = datetime.now().month
+        current_year = datetime.now().year
+        
+        start_of_month = datetime(current_year, current_month, 1)
+        end_of_month = datetime.now()
+        
+        return self.get_realized_pnl(start_of_month, end_of_month)
+    
+    def get_closed_trades_for_month(self, year: int, month: int) -> List[Dict]:
+        """Get all closed trades for a specific month"""
+        start_date = datetime(year, month, 1)
+        if month == 12:
+            end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_date = datetime(year, month + 1, 1) - timedelta(days=1)
+            
+        return [
+            trade for trade in self.trades 
+            if start_date <= trade.get('timestamp', datetime.now()) <= end_date
+            and trade.get('status') == 'CLOSED'
+        ]
+    
+    def record_realized_pnl(self, trade_id: str, realized_pnl: float, close_date: datetime):
+        """Record realized P&L when a position is closed"""
+        pnl_record = {
+            'trade_id': trade_id,
+            'realized_pnl': realized_pnl,
+            'close_date': close_date,
+            'timestamp': datetime.now()
+        }
+        self.realized_pnl_history.append(pnl_record)
+        
+        # Update the original trade record
+        for trade in self.trades:
+            if trade.get('id') == trade_id:
+                trade['realized_pnl'] = realized_pnl
+                trade['close_date'] = close_date
+                trade['status'] = 'CLOSED'
+                break
         
         # Calculate drawdown
         running_max = cum_returns.cummax()
@@ -4736,9 +4839,8 @@ def get_income_tracking():
                 # Get real income from closed positions this month
                 current_month = current_date.month
                 current_year = current_date.year
-                # For now, use a placeholder until we implement proper trade tracking
-                collected_income = monthly_target * 0.65  # Temporary placeholder
-                logger.warning("Using placeholder income calculation - implement proper trade tracking")
+                closed_trades = dashboard.tracker.get_closed_trades_for_month(current_year, current_month)
+                collected_income = sum(trade.get('realized_pnl', 0) for trade in closed_trades if trade.get('realized_pnl', 0) > 0)
             else:
                 raise ValueError("No tracker available for real income calculation")
         except Exception as e:
@@ -4876,6 +4978,56 @@ def get_decision_support():
         
     except Exception as e:
         logger.error(f"Error getting decision support data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/realized-pnl')
+def get_realized_pnl():
+    """Get realized P&L tracking data"""
+    try:
+        logger.info("Fetching realized P&L data...")
+        
+        if not (dashboard and hasattr(dashboard, 'tracker') and dashboard.tracker):
+            raise RuntimeError("Performance tracker not available")
+        
+        # Get different time periods
+        todays_pnl = dashboard.tracker.get_todays_realized_pnl()
+        mtd_pnl = dashboard.tracker.get_mtd_realized_pnl()
+        
+        # Calculate percentage of monthly target
+        try:
+            account_value = dashboard.monitor.account_value if dashboard and dashboard.monitor else None
+            if account_value is None:
+                raise ValueError("No IBKR account value available")
+            monthly_target = account_value * 0.015
+            mtd_percentage = (mtd_pnl['realized_pnl'] / monthly_target * 100) if monthly_target > 0 else 0
+        except Exception as e:
+            logger.error(f"Error calculating monthly target: {e}")
+            monthly_target = 0
+            mtd_percentage = 0
+        
+        pnl_data = {
+            'todays_pnl': {
+                'realized_pnl': todays_pnl['realized_pnl'],
+                'trade_count': todays_pnl['trade_count'],
+                'winning_trades': todays_pnl['winning_trades'],
+                'losing_trades': todays_pnl['losing_trades']
+            },
+            'mtd_pnl': {
+                'realized_pnl': mtd_pnl['realized_pnl'],
+                'trade_count': mtd_pnl['trade_count'],
+                'winning_trades': mtd_pnl['winning_trades'],
+                'losing_trades': mtd_pnl['losing_trades'],
+                'percentage_of_target': mtd_percentage
+            },
+            'monthly_target': monthly_target,
+            'account_value': account_value
+        }
+        
+        logger.info(f"✅ Realized P&L: Today ${todays_pnl['realized_pnl']:.2f}, MTD ${mtd_pnl['realized_pnl']:.2f}")
+        return jsonify(pnl_data)
+        
+    except Exception as e:
+        logger.error(f"Error getting realized P&L data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/status')

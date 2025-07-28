@@ -742,6 +742,46 @@
             }
         }
         
+        // Update realized P&L metrics
+        function updateRealizedPnl(pnlData) {
+            if (!pnlData) return;
+            
+            // Update Today's P&L
+            const todaysPnlElement = document.getElementById('todays-pnl');
+            const todaysPnlTradesElement = document.getElementById('todays-pnl-trades');
+            
+            if (todaysPnlElement && pnlData.todays_pnl) {
+                const pnl = pnlData.todays_pnl.realized_pnl;
+                todaysPnlElement.textContent = `$${pnl.toFixed(2)}`;
+                todaysPnlElement.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+                
+                if (todaysPnlTradesElement) {
+                    const trades = pnlData.todays_pnl.trade_count;
+                    const wins = pnlData.todays_pnl.winning_trades;
+                    const losses = pnlData.todays_pnl.losing_trades;
+                    todaysPnlTradesElement.textContent = `${trades} trades (${wins}W/${losses}L)`;
+                }
+            }
+            
+            // Update MTD P&L
+            const mtdPnlElement = document.getElementById('mtd-pnl');
+            const mtdPnlPercentageElement = document.getElementById('mtd-pnl-percentage');
+            
+            if (mtdPnlElement && pnlData.mtd_pnl) {
+                const pnl = pnlData.mtd_pnl.realized_pnl;
+                mtdPnlElement.textContent = `$${pnl.toFixed(2)}`;
+                mtdPnlElement.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+                
+                if (mtdPnlPercentageElement) {
+                    const percentage = pnlData.mtd_pnl.percentage_of_target;
+                    const trades = pnlData.mtd_pnl.trade_count;
+                    const wins = pnlData.mtd_pnl.winning_trades;
+                    const losses = pnlData.mtd_pnl.losing_trades;
+                    mtdPnlPercentageElement.textContent = `${percentage.toFixed(1)}% of target (${trades} trades)`;
+                }
+            }
+        }
+        
         // Update decision support and counter
         function updateDecisionSupport(data) {
             if (!data) return;
@@ -991,6 +1031,15 @@
                 })
                 .catch(error => console.error('Error fetching income tracking data:', error));
             
+            // Fetch realized P&L data
+            fetch('/api/realized-pnl')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Realized P&L data:', data);
+                    updateRealizedPnl(data);
+                })
+                .catch(error => console.error('Error fetching realized P&L data:', error));
+            
             // Fetch decision support data
             fetch('/api/decision-support')
                 .then(response => response.json())
@@ -1043,6 +1092,16 @@
                             <div class="metric-label">Cash Available</div>
                             <div id="cash-available" class="metric-value">Loading...</div>
                             <div id="cash-percentage" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Today's P&L</div>
+                            <div id="todays-pnl" class="metric-value">Loading...</div>
+                            <div id="todays-pnl-trades" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">MTD P&L</div>
+                            <div id="mtd-pnl" class="metric-value">Loading...</div>
+                            <div id="mtd-pnl-percentage" class="section-label">--</div>
                         </div>
                         <div class="metric-card">
                             <div class="metric-label">Total Return</div>

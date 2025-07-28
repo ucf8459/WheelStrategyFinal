@@ -42,11 +42,11 @@
 - [x] **Decision validation** - Prevent actions when limit reached
 - [x] **Decision history** - Track decisions made each day
 
-#### **2. Realized P&L Tracking** - CRITICAL
-- [ ] **Separate realized vs unrealized P&L** - Track actual profits from closed positions
-- [ ] **Today's P&L calculation** - Daily realized profit/loss tracking
-- [ ] **Month-to-Date (MTD) P&L** - Cumulative realized profits for current month
-- [ ] **P&L display in Portfolio Overview** - Add realized P&L metric cards
+#### **2. Realized P&L Tracking** - CRITICAL ✅ **COMPLETED**
+- [x] **Separate realized vs unrealized P&L** - Track actual profits from closed positions
+- [x] **Today's P&L calculation** - Daily realized profit/loss tracking
+- [x] **Month-to-Date (MTD) P&L** - Cumulative realized profits for current month
+- [x] **P&L display in Portfolio Overview** - Add realized P&L metric cards
 
 #### **3. Position Management Rules** - CRITICAL
 - [ ] **Automatic roll recommendations** - Based on DTE and delta thresholds
