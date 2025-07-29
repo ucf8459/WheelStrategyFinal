@@ -949,15 +949,22 @@
                         systemStatusText.textContent = 'System Inactive';
                     }
                     
-                    // Update Circuit Breaker status
-                    const circuitBreakerStatus = document.getElementById('circuit-breaker-status');
-                    if (data.circuit_breaker_active) {
-                        circuitBreakerStatus.textContent = 'ACTIVE';
-                        circuitBreakerStatus.style.color = 'var(--danger)';
-                    } else {
-                        circuitBreakerStatus.textContent = 'Inactive';
-                        circuitBreakerStatus.style.color = 'var(--success)';
-                    }
+                            // Update Circuit Breaker status
+        const circuitBreakerStatus = document.getElementById('circuit-breaker-status');
+        if (data.circuit_breaker_active) {
+            circuitBreakerStatus.textContent = 'ACTIVE';
+            circuitBreakerStatus.style.color = 'var(--danger)';
+        } else {
+            // Show the reason why it's disabled
+            if (data.circuit_breaker_reason) {
+                circuitBreakerStatus.textContent = 'DISABLED';
+                circuitBreakerStatus.style.color = 'var(--warning)';
+                circuitBreakerStatus.title = data.circuit_breaker_reason;
+            } else {
+                circuitBreakerStatus.textContent = 'Inactive';
+                circuitBreakerStatus.style.color = 'var(--success)';
+            }
+        }
                     
                     // Update Black Swan Protocol status
                     const blackSwanStatus = document.getElementById('black-swan-status');

@@ -5034,12 +5034,15 @@ def get_status():
         
         # Get real Circuit Breaker status
         circuit_breaker_active = False
+        circuit_breaker_reason = None
         if dashboard and dashboard.monitor:
             try:
                 circuit_check = dashboard.monitor.check_circuit_breaker()
-                circuit_breaker_active = circuit_check.get('triggered', False)
+                circuit_breaker_active = circuit_check.get('active', False)
+                circuit_breaker_reason = circuit_check.get('reason', None)
             except Exception as e:
                 logger.error(f"Error checking circuit breaker: {e}")
+                circuit_breaker_reason = f"Error: {e}"
         
         # Get real Black Swan Protocol status
         black_swan_active = False
@@ -5069,6 +5072,7 @@ def get_status():
             'status': 'ok',
             'ibkr_connected': ibkr_connected,
             'circuit_breaker_active': circuit_breaker_active,
+            'circuit_breaker_reason': circuit_breaker_reason,
             'black_swan_active': black_swan_active,
             'earnings_season': earnings_season,
             'seasonal_focus': seasonal_focus,
