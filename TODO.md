@@ -57,6 +57,16 @@
 - [ ] **Delta risk thresholds** - Visual indicators for >0.50, 0.30-0.50, <0.30
 - [ ] **Position action buttons** - Roll, Close, Monitor, Roll Defensive with priority colors
 
+#### **4. System Status Accuracy** - COMPLETED ✅
+- [x] **Circuit Breaker status display** - Fixed to show actual disabled status instead of fake "Inactive"
+- [x] **Circuit Breaker reason display** - Now shows why it's disabled (event loop conflicts)
+- [x] **Black Swan Protocol status display** - Fixed to show actual inactive status instead of fake "Inactive"
+- [x] **Black Swan Protocol reason display** - Now shows why it's inactive (normal market conditions)
+- [x] **API Connection status** - Enhanced to show accurate connection status with detailed reasons
+- [x] **API Connection reason display** - Now shows why connection fails (e.g., "IBKR TWS/Gateway not running")
+- [x] **Dashboard startup robustness** - Fixed to start in offline mode when IBKR is not available
+- [x] **Status endpoint accuracy** - Updated to correctly read all system status responses
+
 #### **4. Premium Collection Tracking** - CRITICAL
 - [ ] **Daily premium tracking** - Track option premium received each day
 - [ ] **MTD premium total** - Cumulative premium for current month
