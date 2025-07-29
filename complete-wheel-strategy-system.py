@@ -1533,9 +1533,14 @@ class WheelScanner:
                     time.sleep(0.5)
                 else:
                     logger.error(f"Scanner connection failed: {e}")
-                    raise
+                    # Don't raise the exception, just log it and continue without connection
+                    print(f"⚠️  Scanner connection failed: {e}")
+                    print("📊 Scanner will operate in offline mode")
+                    return
                     
-        raise Exception(f"Could not find available client ID in scanner range {min_id}-{max_id}")
+        # If we get here, we couldn't connect
+        print("⚠️  Could not find available client ID for scanner")
+        print("📊 Scanner will operate in offline mode")
         
     def _load_sector_map(self) -> Dict:
         """Load sector classifications for symbols - TEMPORARILY DISABLED due to yfinance rate limits"""
@@ -2114,9 +2119,14 @@ class TradeExecutor:
                     time.sleep(0.5)
                 else:
                     logger.error(f"Executor connection failed: {e}")
-                    raise
+                    # Don't raise the exception, just log it and continue without connection
+                    print(f"⚠️  Executor connection failed: {e}")
+                    print("📊 Executor will operate in offline mode")
+                    return
                     
-        raise Exception(f"Could not find available client ID in executor range {min_id}-{max_id}")
+        # If we get here, we couldn't connect
+        print("⚠️  Could not find available client ID for executor")
+        print("📊 Executor will operate in offline mode")
         
         # Connect monitor's BlackSwanProtocol to this executor
         self.monitor.black_swan_protocol.executor = self
