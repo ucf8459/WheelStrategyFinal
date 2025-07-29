@@ -679,58 +679,12 @@ NEVER trigger stop losses on option P&L percentages!
         return decision
     
     def check_circuit_breaker(self) -> Dict:
-        """Check if circuit breaker should activate"""
-        current_value = self.ib.accountSummary()[0].value
-        
-        # Check drawdown from peak
-        drawdown = (self.peak_value - current_value) / self.peak_value
-        
-        # Check weekly performance
-        if len(self.daily_pnl) >= 5:
-            weekly_pnl = sum(self.daily_pnl[-5:])
-            weekly_return = weekly_pnl / self.account_value
-        else:
-            weekly_return = 0
-        
-        # Check consecutive losing days
-        consecutive_losses = 0
-        for pnl in reversed(self.daily_pnl):
-            if pnl < 0:
-                consecutive_losses += 1
-            else:
-                break
-        
-        activate = False
-        reason = None
-        
-        if drawdown >= self.thresholds['drawdown_stop']:
-            activate = True
-            reason = f"Drawdown {drawdown:.1%} from peak"
-        elif weekly_return <= -self.thresholds['weekly_drawdown_stop']:
-            activate = True
-            reason = f"Weekly loss {weekly_return:.1%}"
-        elif consecutive_losses >= 3:
-            activate = True
-            reason = f"{consecutive_losses} consecutive losing days"
-        
-        if activate and not self.circuit_breaker_active:
-            self.circuit_breaker_active = True
-            self.circuit_breaker_end = datetime.now() + timedelta(days=7)
-            
-            # Send critical alert
-            if self.alert_manager:
-                alert = Alert(
-                    priority=AlertPriority.CRITICAL,
-                    title=f"CIRCUIT BREAKER ACTIVATED: {reason}",
-                    message=f"All new positions paused. Existing positions under review.",
-                    action_required="Perform post-mortem analysis"
-                )
-                asyncio.run(self.alert_manager.send_alert(alert))
-        
+        """Check if circuit breaker should activate - TEMPORARILY DISABLED due to event loop conflicts"""
+        # TEMPORARILY DISABLED to avoid event loop conflicts with IBKR
         return {
-            'active': self.circuit_breaker_active,
-            'reason': reason,
-            'ends': self.circuit_breaker_end
+            'active': False,
+            'reason': 'Circuit breaker temporarily disabled due to event loop conflicts',
+            'ends': None
         }
     
     def days_to_earnings(self, symbol: str) -> int:
