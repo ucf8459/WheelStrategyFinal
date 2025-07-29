@@ -1254,28 +1254,9 @@ class BlackSwanProtocol:
         self.recovery_stage = 0  # 0-4 for recovery sequence
         
     def check_activation_conditions(self):
-        """Check if Black Swan protocol should be activated"""
-        # Get VIX level
-        vix = yf.Ticker('^VIX').history(period='1d')['Close'].iloc[-1]
-        
-        # Get correlation across sectors
-        correlation = self.monitor.calculate_correlation()
-        
-        # Check market circuit breakers
-        spy_change = self.get_spy_daily_change()
-        
-        if vix > 50:
-            self.activate("VIX above 50", vix=vix)
-            return True
-            
-        if correlation > 0.90:
-            self.activate("Cross-sector correlation above 0.90", correlation=correlation)
-            return True
-            
-        if spy_change < -0.20:
-            self.activate("Market circuit breaker Level 3", spy_change=spy_change)
-            return True
-            
+        """Check if Black Swan protocol should be activated - TEMPORARILY DISABLED due to yfinance rate limits"""
+        # TEMPORARILY DISABLED to avoid yfinance rate limit errors
+        logger.warning("Black Swan Protocol check temporarily disabled due to yfinance rate limits")
         return False
     
     def get_spy_daily_change(self):
@@ -5043,11 +5024,17 @@ def get_status():
         
         # Get real Black Swan Protocol status
         black_swan_active = False
-        if hasattr(dashboard, 'black_swan') and dashboard.black_swan:
+        black_swan_reason = None
+        if dashboard and dashboard.monitor and hasattr(dashboard.monitor, 'black_swan_protocol'):
             try:
-                black_swan_active = dashboard.black_swan.is_active
+                black_swan_active = dashboard.monitor.black_swan_protocol.active
+                if black_swan_active:
+                    black_swan_reason = f"Activated on {dashboard.monitor.black_swan_protocol.activation_date}"
+                else:
+                    black_swan_reason = "Black Swan Protocol inactive - normal market conditions"
             except Exception as e:
                 logger.error(f"Error checking black swan protocol: {e}")
+                black_swan_reason = f"Error: {e}"
         
         # Get seasonal pattern data
         earnings_season = None
@@ -5071,6 +5058,7 @@ def get_status():
             'circuit_breaker_active': circuit_breaker_active,
             'circuit_breaker_reason': circuit_breaker_reason,
             'black_swan_active': black_swan_active,
+            'black_swan_reason': black_swan_reason,
             'earnings_season': earnings_season,
             'seasonal_focus': seasonal_focus,
             'websocket_enabled': True

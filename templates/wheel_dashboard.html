@@ -966,15 +966,25 @@
             }
         }
                     
-                    // Update Black Swan Protocol status
-                    const blackSwanStatus = document.getElementById('black-swan-status');
-                    if (data.black_swan_active) {
-                        blackSwanStatus.textContent = 'ACTIVE';
-                        blackSwanStatus.style.color = 'var(--danger)';
-                    } else {
-                        blackSwanStatus.textContent = 'Inactive';
-                        blackSwanStatus.style.color = 'var(--success)';
-                    }
+                            // Update Black Swan Protocol status
+        const blackSwanStatus = document.getElementById('black-swan-status');
+        if (data.black_swan_active) {
+            blackSwanStatus.textContent = 'ACTIVE';
+            blackSwanStatus.style.color = 'var(--danger)';
+            if (data.black_swan_reason) {
+                blackSwanStatus.title = data.black_swan_reason;
+            }
+        } else {
+            // Show the reason why it's inactive
+            if (data.black_swan_reason) {
+                blackSwanStatus.textContent = 'INACTIVE';
+                blackSwanStatus.style.color = 'var(--success)';
+                blackSwanStatus.title = data.black_swan_reason;
+            } else {
+                blackSwanStatus.textContent = 'Inactive';
+                blackSwanStatus.style.color = 'var(--success)';
+            }
+        }
                     
                     // Update API Connection status
                     const apiConnectionStatus = document.getElementById('api-connection-status');
