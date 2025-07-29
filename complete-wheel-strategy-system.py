@@ -5016,18 +5016,10 @@ def get_status():
                 # Test if we can actually get data from IBKR
                 basic_connected = dashboard.monitor.ib.isConnected()
                 if basic_connected:
-                    # Try to get a simple account summary to verify real connectivity
-                    try:
-                        account_summary = dashboard.monitor.ib.accountSummary()
-                        if account_summary:
-                            ibkr_connected = True
-                            ibkr_connection_reason = "Connected and data accessible"
-                        else:
-                            ibkr_connected = False
-                            ibkr_connection_reason = "Connected but no data returned"
-                    except Exception as e:
-                        ibkr_connected = False
-                        ibkr_connection_reason = f"Connection test failed: {str(e)}"
+                    # For now, just trust the basic connection status to avoid event loop conflicts
+                    # The real test will happen when the dashboard tries to get data
+                    ibkr_connected = True
+                    ibkr_connection_reason = "Connected (basic check)"
                 else:
                     ibkr_connected = False
                     ibkr_connection_reason = "Not connected to IBKR"
