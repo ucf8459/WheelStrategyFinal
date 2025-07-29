@@ -5750,12 +5750,21 @@ config = {
 
 # Initialize core components at global scope for ASGI/Hypercorn
 monitor = WheelMonitor(config['account']['starting_value'])
-monitor.connect(
-    host=config['ibkr']['host'],
-    port=config['ibkr']['port'],
-    clientId=config['ibkr']['client_id']
-)
 monitor.watchlist = config['symbols']
+
+# Try to connect to IBKR, but don't fail if it's not available
+try:
+    monitor.connect(
+        host=config['ibkr']['host'],
+        port=config['ibkr']['port'],
+        clientId=config['ibkr']['client_id']
+    )
+    print("✅ Successfully connected to IBKR")
+except Exception as e:
+    print(f"⚠️  IBKR connection failed: {e}")
+    print("📊 Dashboard will start in offline mode - some features will be limited")
+    print("💡 To enable full functionality, start IBKR TWS or IB Gateway")
+
 scanner = WheelScanner(config['symbols'], monitor)
 executor = TradeExecutor(monitor)
 alert_manager = EnhancedAlertManager(config)
@@ -5789,14 +5798,22 @@ def main():
     
     # Initialize components with enhanced features
     monitor = WheelMonitor(config['account']['starting_value'])
-    monitor.connect(
-        host=config['ibkr']['host'],
-        port=config['ibkr']['port'],
-        clientId=config['ibkr']['client_id']
-    )
     
     # Set watchlist
     monitor.watchlist = config['symbols']
+    
+    # Try to connect to IBKR, but don't fail if it's not available
+    try:
+        monitor.connect(
+            host=config['ibkr']['host'],
+            port=config['ibkr']['port'],
+            clientId=config['ibkr']['client_id']
+        )
+        print("✅ Successfully connected to IBKR")
+    except Exception as e:
+        print(f"⚠️  IBKR connection failed: {e}")
+        print("📊 Dashboard will start in offline mode - some features will be limited")
+        print("💡 To enable full functionality, start IBKR TWS or IB Gateway")
     
     # Initialize other components
     scanner = WheelScanner(config['symbols'], monitor)
