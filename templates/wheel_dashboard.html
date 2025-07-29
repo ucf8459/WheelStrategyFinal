@@ -986,15 +986,25 @@
             }
         }
                     
-                    // Update API Connection status
-                    const apiConnectionStatus = document.getElementById('api-connection-status');
-                    if (data.ibkr_connected) {
-                        apiConnectionStatus.textContent = 'Connected';
-                        apiConnectionStatus.style.color = 'var(--success)';
-                    } else {
-                        apiConnectionStatus.textContent = 'Disconnected';
-                        apiConnectionStatus.style.color = 'var(--danger)';
-                    }
+                            // Update API Connection status
+        const apiConnectionStatus = document.getElementById('api-connection-status');
+        if (data.ibkr_connected) {
+            apiConnectionStatus.textContent = 'Connected';
+            apiConnectionStatus.style.color = 'var(--success)';
+            if (data.ibkr_connection_reason) {
+                apiConnectionStatus.title = data.ibkr_connection_reason;
+            }
+        } else {
+            // Show the reason why it's disconnected
+            if (data.ibkr_connection_reason) {
+                apiConnectionStatus.textContent = 'DISCONNECTED';
+                apiConnectionStatus.style.color = 'var(--danger)';
+                apiConnectionStatus.title = data.ibkr_connection_reason;
+            } else {
+                apiConnectionStatus.textContent = 'Disconnected';
+                apiConnectionStatus.style.color = 'var(--danger)';
+            }
+        }
                     
                     // Update seasonal pattern data
                     const earningsSeason = document.getElementById('earnings-season');

@@ -5008,7 +5008,35 @@ def get_realized_pnl():
 def get_status():
     """Check system status with real Circuit Breaker and Black Swan Protocol status"""
     try:
-        ibkr_connected = dashboard.monitor.ib.isConnected() if dashboard and dashboard.monitor and dashboard.monitor.ib else False
+        # Get real IBKR connection status with actual data test
+        ibkr_connected = False
+        ibkr_connection_reason = None
+        if dashboard and dashboard.monitor and dashboard.monitor.ib:
+            try:
+                # Test if we can actually get data from IBKR
+                basic_connected = dashboard.monitor.ib.isConnected()
+                if basic_connected:
+                    # Try to get a simple account summary to verify real connectivity
+                    try:
+                        account_summary = dashboard.monitor.ib.accountSummary()
+                        if account_summary:
+                            ibkr_connected = True
+                            ibkr_connection_reason = "Connected and data accessible"
+                        else:
+                            ibkr_connected = False
+                            ibkr_connection_reason = "Connected but no data returned"
+                    except Exception as e:
+                        ibkr_connected = False
+                        ibkr_connection_reason = f"Connection test failed: {str(e)}"
+                else:
+                    ibkr_connected = False
+                    ibkr_connection_reason = "Not connected to IBKR"
+            except Exception as e:
+                ibkr_connected = False
+                ibkr_connection_reason = f"Connection check error: {str(e)}"
+        else:
+            ibkr_connected = False
+            ibkr_connection_reason = "Dashboard or monitor not available"
         
         # Get real Circuit Breaker status
         circuit_breaker_active = False
@@ -5055,6 +5083,7 @@ def get_status():
         return jsonify({
             'status': 'ok',
             'ibkr_connected': ibkr_connected,
+            'ibkr_connection_reason': ibkr_connection_reason,
             'circuit_breaker_active': circuit_breaker_active,
             'circuit_breaker_reason': circuit_breaker_reason,
             'black_swan_active': black_swan_active,
