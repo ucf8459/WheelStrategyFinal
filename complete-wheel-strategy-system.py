@@ -1557,13 +1557,10 @@ class WheelScanner:
         raise Exception(f"Could not find available client ID in scanner range {min_id}-{max_id}")
         
     def _load_sector_map(self) -> Dict:
-        """Load sector classifications for symbols"""
-        sector_map = {}
-        for symbol in self.symbols:
-            stock = yf.Ticker(symbol)
-            info = stock.info
-            sector_map[symbol] = info.get('sector', 'Unknown')
-        return sector_map
+        """Load sector classifications for symbols - TEMPORARILY DISABLED due to yfinance rate limits"""
+        # TEMPORARILY DISABLED to avoid yfinance rate limit errors
+        logger.warning("Sector map loading temporarily disabled due to yfinance rate limits")
+        return {symbol: 'Unknown' for symbol in self.symbols}
     
     async def scan_opportunities_async(self) -> List[Dict]:
         """Find wheel candidates meeting all criteria asynchronously"""
