@@ -5430,8 +5430,48 @@ class WheelDashboard:
         # This is a compatibility wrapper - the real work is done in the async version
         raise RuntimeError("Use _get_ibkr_delta_async instead - sync calls not supported in Flask context")
 
+    def _get_delta_from_cache(self, symbol):
+        """Get delta value from the background service cache"""
+        try:
+            import json
+            from datetime import datetime, timedelta
+            
+            cache_file = 'delta_cache.json'
+            
+            # Check if cache file exists and is recent (less than 5 minutes old)
+            try:
+                with open(cache_file, 'r') as f:
+                    data = json.load(f)
+                    
+                # Check timestamp
+                cache_time = datetime.fromisoformat(data.get('timestamp', ''))
+                if datetime.now() - cache_time > timedelta(minutes=5):
+                    logger.warning(f"⚠️ Delta cache is stale for {symbol}, using fallback")
+                    return None
+                
+                # Get delta for this symbol
+                deltas = data.get('deltas', {})
+                if symbol in deltas:
+                    delta_value = deltas[symbol]
+                    logger.info(f"✅ {symbol}: Cached delta {delta_value:.3f}")
+                    return delta_value
+                else:
+                    logger.warning(f"⚠️ No cached delta found for {symbol}")
+                    return None
+                    
+            except FileNotFoundError:
+                logger.warning(f"⚠️ No delta cache file found for {symbol}")
+                return None
+            except Exception as e:
+                logger.error(f"❌ Error reading delta cache for {symbol}: {e}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error in _get_delta_from_cache for {symbol}: {e}")
+            return None
+    
     async def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
-        """Get actual delta from IBKR - returns estimated delta if live data unavailable"""
+        """Get delta from background service cache or fallback to estimate"""
         try:
             # For stocks, delta is always 1.0
             if contract_type == 'STK':
@@ -5439,17 +5479,14 @@ class WheelDashboard:
             elif contract_type != 'OPT':
                 return 0.0
             
-            # For options, try to get live Greeks from IBKR first
-            try:
-                # Use the existing async method that avoids event loop conflicts
-                live_delta = await self._get_ibkr_delta_async(contract, contract_type)
-                if live_delta is not None:
-                    logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {live_delta:.3f}")
-                    return live_delta
-            except Exception as e:
-                logger.warning(f"⚠️ {contract.symbol}: Live delta failed ({e}), using estimate")
+            # Try to get delta from background service cache
+            cached_delta = self._get_delta_from_cache(contract.symbol)
+            if cached_delta is not None:
+                return cached_delta
             
-            # Fallback to estimated delta if live data unavailable
+            # Fallback to estimated delta if cache unavailable
+            logger.warning(f"⚠️ {contract.symbol}: Using fallback delta estimate")
+            
             try:
                 # Get current stock price for delta estimation
                 stock_price = None
@@ -5528,11 +5565,11 @@ class WheelDashboard:
                 else:
                     delta = max(-0.99, min(-0.01, delta))
                 
-                logger.info(f"📊 {contract.symbol}: Estimated delta {delta:.2f} (price=${stock_price:.2f}, strike=${strike}, type={contract.right})")
+                logger.info(f"📊 {contract.symbol}: Fallback delta {delta:.2f} (price=${stock_price:.2f}, strike=${strike}, type={contract.right})")
                 return delta
                         
             except Exception as e:
-                logger.error(f"Error calculating estimated delta for {contract.symbol}: {e}")
+                logger.error(f"Error calculating fallback delta for {contract.symbol}: {e}")
                 return 0.0
                 
         except Exception as e:
