@@ -5430,9 +5430,10 @@ class WheelDashboard:
             raise RuntimeError(f"Failed to get IBKR delta for {contract.symbol}: {e}")
     
     def _get_ibkr_delta(self, contract, contract_type):
-        """Sync wrapper for async delta retrieval"""
-        # This is a compatibility wrapper - the real work is done in the async version
-        raise RuntimeError("Use _get_ibkr_delta_async instead - sync calls not supported in Flask context")
+        """Sync wrapper for async delta retrieval - REMOVED to prevent event loop conflicts"""
+        # This method has been completely removed to prevent event loop conflicts
+        # All delta calculations should use _get_ibkr_delta_async or _calculate_estimated_delta
+        raise RuntimeError("_get_ibkr_delta has been removed - use _get_ibkr_delta_async or _calculate_estimated_delta instead")
 
     def _get_delta_from_cache(self, symbol):
         """Get delta value from the background service cache"""
