@@ -5299,6 +5299,9 @@ class WheelDashboard:
                         symbol_display = contract.symbol
                         contract_type = 'STK'
                     
+                    # Calculate delta for this position
+                    estimated_delta = await self._calculate_position_delta(contract, contract_type, option_type, strike, item.position)
+                    
                     # Create position data with frontend-expected format
                     position_info = {
                         # Raw IBKR data (preserved for backward compatibility)
@@ -5428,19 +5431,27 @@ class WheelDashboard:
         raise RuntimeError("Use _get_ibkr_delta_async instead - sync calls not supported in Flask context")
 
     async def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
-        """Get delta from IBKR - HARD FAIL if unable to get live data"""
+        """Get actual delta from IBKR - returns estimated delta if live data unavailable"""
         try:
-            # Use a more robust approach that avoids event loop conflicts
+            # For stocks, delta is always 1.0
             if contract_type == 'STK':
                 return 1.0
             elif contract_type != 'OPT':
                 return 0.0
             
-            # For options, use a simpler approach that doesn't require async IBKR calls
-            # This avoids the event loop conflict while still providing meaningful delta estimates
+            # For options, try to get live Greeks from IBKR first
             try:
-                # Get current stock price for delta estimation - use market price from position data
-                # This avoids async calls that cause event loop conflicts
+                # Use the existing async method that avoids event loop conflicts
+                live_delta = await self._get_ibkr_delta_async(contract, contract_type)
+                if live_delta is not None:
+                    logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {live_delta:.3f}")
+                    return live_delta
+            except Exception as e:
+                logger.warning(f"⚠️ {contract.symbol}: Live delta failed ({e}), using estimate")
+            
+            # Fallback to estimated delta if live data unavailable
+            try:
+                # Get current stock price for delta estimation
                 stock_price = None
                 
                 # Try to get price from position data first
@@ -5448,7 +5459,6 @@ class WheelDashboard:
                     # For puts, estimate stock price from option price and strike
                     if contract.right == 'P':
                         # Rough estimate: stock price ≈ strike - (option_price * 2)
-                        # This is a simplified Black-Scholes approximation
                         option_price = abs(contract.marketPrice)
                         stock_price = strike - (option_price * 2)
                         # Ensure reasonable bounds
@@ -5518,6 +5528,7 @@ class WheelDashboard:
                 else:
                     delta = max(-0.99, min(-0.01, delta))
                 
+                logger.info(f"📊 {contract.symbol}: Estimated delta {delta:.2f} (price=${stock_price:.2f}, strike=${strike}, type={contract.right})")
                 return delta
                         
             except Exception as e:
