@@ -5887,9 +5887,58 @@ def get_positions():
                                 else:
                                     dte_color = 'white'
                             
-                            # Calculate Delta risk thresholds (using estimated delta for now)
+                            # Get delta from cache or calculate estimated delta
+                            estimated_delta = 0.0  # Default
+                            if hasattr(contract, 'right') and contract.right != '0':  # Only for options
+                                # Try to get delta from cache first
+                                try:
+                                    cached_delta = dashboard._get_delta_from_cache(contract.symbol)
+                                    if cached_delta is not None:
+                                        estimated_delta = cached_delta
+                                        logger.info(f"✅ {contract.symbol}: Using cached delta {estimated_delta:.3f}")
+                                    else:
+                                        # Fallback to estimation if cache unavailable
+                                        logger.warning(f"⚠️ {contract.symbol}: No cached delta, using estimation")
+                                        if hasattr(contract, 'strike') and stock_price:
+                                            moneyness = stock_price / contract.strike
+                                            if contract.right == 'P':  # Put options
+                                                if moneyness > 1.05:  # Deep ITM
+                                                    estimated_delta = -0.8
+                                                elif moneyness > 0.95:  # Near ATM
+                                                    estimated_delta = -0.5
+                                                else:  # OTM
+                                                    estimated_delta = -0.2
+                                            else:  # Call options
+                                                if moneyness > 1.05:  # Deep ITM
+                                                    estimated_delta = 0.8
+                                                elif moneyness > 0.95:  # Near ATM
+                                                    estimated_delta = 0.5
+                                                else:  # OTM
+                                                    estimated_delta = 0.2
+                                except Exception as e:
+                                    logger.error(f"❌ Error getting delta for {contract.symbol}: {e}")
+                                    # Use fallback estimation
+                                    if hasattr(contract, 'strike') and stock_price:
+                                        moneyness = stock_price / contract.strike
+                                        if contract.right == 'P':  # Put options
+                                            if moneyness > 1.05:  # Deep ITM
+                                                estimated_delta = -0.8
+                                            elif moneyness > 0.95:  # Near ATM
+                                                estimated_delta = -0.5
+                                            else:  # OTM
+                                                estimated_delta = -0.2
+                                        else:  # Call options
+                                            if moneyness > 1.05:  # Deep ITM
+                                                estimated_delta = 0.8
+                                            elif moneyness > 0.95:  # Near ATM
+                                                estimated_delta = 0.5
+                                            else:  # OTM
+                                                estimated_delta = 0.2
+                            elif hasattr(contract, 'right') and contract.right == '0':  # Stock
+                                estimated_delta = 1.0  # Stock delta is always 1.0
+                            
+                            # Calculate Delta risk thresholds
                             delta_risk = 'low'  # Default
-                            estimated_delta = 0.0  # Placeholder until real delta calculation is fixed
                             
                             # Generate automatic roll recommendations
                             roll_recommendation = None
@@ -5914,33 +5963,14 @@ def get_positions():
                                         close_recommendation = 'Consider closing to limit losses (-25%+)'
                                     elif pnl_pct <= -10:
                                         close_recommendation = 'Monitor closely - approaching loss threshold'
-                            if hasattr(contract, 'right') and contract.right != '0':  # Only for options
-                                # For now, estimate delta based on moneyness (this is temporary)
-                                if hasattr(contract, 'strike') and stock_price:
-                                    moneyness = stock_price / contract.strike
-                                    if contract.right == 'P':  # Put options
-                                        if moneyness > 1.05:  # Deep ITM
-                                            estimated_delta = -0.8
-                                        elif moneyness > 0.95:  # Near ATM
-                                            estimated_delta = -0.5
-                                        else:  # OTM
-                                            estimated_delta = -0.2
-                                    else:  # Call options
-                                        if moneyness > 1.05:  # Deep ITM
-                                            estimated_delta = 0.8
-                                        elif moneyness > 0.95:  # Near ATM
-                                            estimated_delta = 0.5
-                                        else:  # OTM
-                                            estimated_delta = 0.2
-                                
-                                # Determine risk level based on absolute delta value
-                                abs_delta = abs(estimated_delta)
-                                if abs_delta > 0.50:
-                                    delta_risk = 'high'
-                                elif abs_delta > 0.30:
-                                    delta_risk = 'medium'
-                                else:
-                                    delta_risk = 'low'
+                            # Determine risk level based on absolute delta value
+                            abs_delta = abs(estimated_delta)
+                            if abs_delta > 0.50:
+                                delta_risk = 'high'
+                            elif abs_delta > 0.30:
+                                delta_risk = 'medium'
+                            else:
+                                delta_risk = 'low'
                             
                             position_data = {
                                 'symbol': contract.symbol,
