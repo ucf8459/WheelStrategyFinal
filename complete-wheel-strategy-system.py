@@ -207,6 +207,137 @@ class DecisionCounter:
 # Main Wheel Monitor Class
 # -------------------------------------------------------------
 
+class WorkflowTracker:
+    """Track daily workflow completion status"""
+    
+    def __init__(self):
+        self.workflow_file = 'workflow_status.json'
+        self.today = datetime.now().date()
+        self.workflow_status = self._load_workflow_status()
+        
+    def _load_workflow_status(self):
+        """Load workflow status from file"""
+        try:
+            with open(self.workflow_file, 'r') as f:
+                data = json.load(f)
+                # Check if data is for today
+                saved_date = datetime.fromisoformat(data.get('date', '')).date()
+                if saved_date == self.today:
+                    return data
+        except (FileNotFoundError, json.JSONDecodeError, ValueError):
+            pass
+        
+        # Return default status for today
+        return {
+            'date': self.today.isoformat(),
+            'morning_routine': {
+                'completed': False,
+                'completed_at': None,
+                'planned_time': '09:00',
+                'actual_time': None,
+                'notes': ''
+            },
+            'afternoon_checkin': {
+                'completed': False,
+                'completed_at': None,
+                'planned_time': '14:30',
+                'actual_time': None,
+                'notes': ''
+            },
+            'eod_routine': {
+                'completed': False,
+                'completed_at': None,
+                'planned_time': '16:00',
+                'actual_time': None,
+                'notes': ''
+            },
+            'weekly_review': {
+                'completed': False,
+                'completed_at': None,
+                'planned_time': '16:30',
+                'actual_time': None,
+                'notes': ''
+            }
+        }
+    
+    def _save_workflow_status(self):
+        """Save workflow status to file"""
+        try:
+            with open(self.workflow_file, 'w') as f:
+                json.dump(self.workflow_status, f, indent=2, default=str)
+        except Exception as e:
+            print(f"Error saving workflow status: {e}")
+    
+    def mark_workflow_complete(self, workflow_type: str, notes: str = ""):
+        """Mark a workflow as completed"""
+        if workflow_type not in self.workflow_status:
+            return False
+        
+        now = datetime.now()
+        self.workflow_status[workflow_type].update({
+            'completed': True,
+            'completed_at': now.isoformat(),
+            'actual_time': now.strftime('%H:%M'),
+            'notes': notes
+        })
+        
+        self._save_workflow_status()
+        return True
+    
+    def get_workflow_status(self):
+        """Get current workflow status"""
+        return self.workflow_status
+    
+    def get_completion_summary(self):
+        """Get workflow completion summary"""
+        completed = sum(1 for wf in self.workflow_status.values() 
+                       if isinstance(wf, dict) and wf.get('completed', False))
+        total = len([wf for wf in self.workflow_status.values() 
+                    if isinstance(wf, dict)])
+        
+        return {
+            'completed_count': completed,
+            'total_count': total,
+            'completion_percentage': (completed / total * 100) if total > 0 else 0,
+            'status': self.workflow_status
+        }
+    
+    def get_next_workflow(self):
+        """Get the next workflow that should be completed"""
+        current_time = datetime.now().time()
+        
+        workflows = [
+            ('morning_routine', time(9, 0)),
+            ('afternoon_checkin', time(14, 30)),
+            ('eod_routine', time(16, 0)),
+            ('weekly_review', time(16, 30))
+        ]
+        
+        for workflow_name, planned_time in workflows:
+            if not self.workflow_status[workflow_name]['completed']:
+                if current_time >= planned_time:
+                    return {
+                        'workflow': workflow_name,
+                        'planned_time': planned_time.strftime('%H:%M'),
+                        'overdue': True,
+                        'status': 'OVERDUE'
+                    }
+                else:
+                    return {
+                        'workflow': workflow_name,
+                        'planned_time': planned_time.strftime('%H:%M'),
+                        'overdue': False,
+                        'status': 'UPCOMING'
+                    }
+        
+        return {
+            'workflow': 'all_complete',
+            'planned_time': None,
+            'overdue': False,
+            'status': 'COMPLETE'
+        }
+
+
 class WheelMonitor:
     """Monitor wheel strategy positions with strict risk controls
 
@@ -237,6 +368,9 @@ NEVER trigger stop losses on option P&L percentages!
         
         # Decision tracking system
         self.decision_counter = DecisionCounter(max_daily_decisions=3)
+        
+        # Workflow tracking system
+        self.workflow_tracker = WorkflowTracker()
         
         # Client ID ranges for different components:
         # Monitor: 1000-1999
@@ -4742,55 +4876,56 @@ def get_daily_workflow():
         current_time = datetime.now()
         current_hour = current_time.hour
         
-        # Check if workflow system is available and has real completion data
+        # Get workflow status from tracker
         try:
-            if not (dashboard and hasattr(dashboard, 'workflow') and dashboard.workflow):
-                raise RuntimeError("Workflow system not available")
+            workflow_status = dashboard.monitor.workflow_tracker.get_workflow_status()
+            completion_summary = dashboard.monitor.workflow_tracker.get_completion_summary()
+            next_workflow = dashboard.monitor.workflow_tracker.get_next_workflow()
             
-            # Check for real completion times - if they exist, workflow was executed
-            morning_completed = hasattr(dashboard.workflow, 'morning_completion_time') and dashboard.workflow.morning_completion_time is not None
-            afternoon_completed = hasattr(dashboard.workflow, 'afternoon_completion_time') and dashboard.workflow.afternoon_completion_time is not None
-            eod_completed = hasattr(dashboard.workflow, 'eod_completion_time') and dashboard.workflow.eod_completion_time is not None
+            # Get current time for status determination
+            current_time = datetime.now()
+            current_hour = current_time.hour
             
-            morning_status = 'completed' if morning_completed else 'pending'
-            afternoon_status = 'completed' if afternoon_completed else 'pending'
-            eod_status = 'completed' if eod_completed else 'pending'
+            workflow_data = [
+                {
+                    'name': 'Morning Routine',
+                    'status': 'completed' if workflow_status['morning_routine']['completed'] else ('in_progress' if 9 <= current_hour < 10 else 'pending'),
+                    'time': workflow_status['morning_routine']['actual_time'] or '--',
+                    'badge_class': 'badge-success' if workflow_status['morning_routine']['completed'] else 'badge-info',
+                    'notes': workflow_status['morning_routine']['notes']
+                },
+                {
+                    'name': 'Afternoon Check-in',
+                    'status': 'completed' if workflow_status['afternoon_checkin']['completed'] else ('in_progress' if 14 <= current_hour < 15 else 'pending'),
+                    'time': workflow_status['afternoon_checkin']['actual_time'] or '--',
+                    'badge_class': 'badge-success' if workflow_status['afternoon_checkin']['completed'] else 'badge-info',
+                    'notes': workflow_status['afternoon_checkin']['notes']
+                },
+                {
+                    'name': 'EOD Routine',
+                    'status': 'completed' if workflow_status['eod_routine']['completed'] else ('in_progress' if 16 <= current_hour < 17 else 'pending'),
+                    'time': workflow_status['eod_routine']['actual_time'] or '--',
+                    'badge_class': 'badge-success' if workflow_status['eod_routine']['completed'] else 'badge-info',
+                    'notes': workflow_status['eod_routine']['notes']
+                },
+                {
+                    'name': 'Weekly Review',
+                    'status': 'completed' if workflow_status['weekly_review']['completed'] else ('in_progress' if 16 <= current_hour < 17 else 'pending'),
+                    'time': workflow_status['weekly_review']['actual_time'] or '--',
+                    'badge_class': 'badge-success' if workflow_status['weekly_review']['completed'] else 'badge-info',
+                    'notes': workflow_status['weekly_review']['notes']
+                }
+            ]
+            
+            # Add completion summary and next workflow info
+            workflow_data.append({
+                'completion_summary': completion_summary,
+                'next_workflow': next_workflow
+            })
             
         except Exception as e:
-            logger.error(f"❌ DAILY WORKFLOW FAILED - NO REAL WORKFLOW DATA: {e}")
-            raise RuntimeError(f"Real workflow execution data required: {e}")
-        
-        # Get real completion times from workflow execution
-        try:
-            morning_time = dashboard.workflow.morning_completion_time.strftime('%H:%M ET') if hasattr(dashboard, 'workflow') and hasattr(dashboard.workflow, 'morning_completion_time') and dashboard.workflow.morning_completion_time else '--'
-            afternoon_time = dashboard.workflow.afternoon_completion_time.strftime('%H:%M ET') if hasattr(dashboard, 'workflow') and hasattr(dashboard.workflow, 'afternoon_completion_time') and dashboard.workflow.afternoon_completion_time else '--'
-            eod_time = dashboard.workflow.eod_completion_time.strftime('%H:%M ET') if hasattr(dashboard, 'workflow') and hasattr(dashboard.workflow, 'eod_completion_time') and dashboard.workflow.eod_completion_time else '--'
-        except Exception as e:
-            logger.error(f"Error getting real workflow times: {e}")
-            morning_time = '--'
-            afternoon_time = '--'
-            eod_time = '--'
-        
-        workflow_data = [
-            {
-                'name': 'Morning Routine',
-                'status': morning_status,
-                'time': morning_time,
-                'badge_class': 'badge-success' if morning_status == 'completed' else 'badge-info'
-            },
-            {
-                'name': 'Afternoon Check-in',
-                'status': afternoon_status,
-                'time': afternoon_time,
-                'badge_class': 'badge-success' if afternoon_status == 'completed' else 'badge-info'
-            },
-            {
-                'name': 'EOD Routine',
-                'status': eod_status,
-                'time': eod_time,
-                'badge_class': 'badge-success' if eod_status == 'completed' else 'badge-info'
-            }
-        ]
+            logger.error(f"❌ DAILY WORKFLOW FAILED - NO WORKFLOW TRACKER: {e}")
+            raise RuntimeError(f"Workflow tracker not available: {e}")
         
         logger.info(f"✅ Daily workflow status updated")
         return jsonify(workflow_data)
@@ -4803,24 +4938,51 @@ from datetime import datetime
 
 @app.route('/api/mark-morning-complete', methods=['POST'])
 def api_mark_morning_complete():
-    if hasattr(dashboard, 'workflow'):
-        dashboard.workflow.morning_completion_time = datetime.now()
-        return jsonify({'status': 'ok', 'time': dashboard.workflow.morning_completion_time.strftime('%H:%M ET')})
-    return jsonify({'error': 'Failed to mark morning complete'}), 500
+    """Mark morning routine as complete"""
+    try:
+        notes = request.json.get('notes', 'Morning routine completed') if request.json else 'Morning routine completed'
+        dashboard.monitor.workflow_tracker.mark_workflow_complete('morning_routine', notes)
+        logger.info("✅ Morning routine marked as complete")
+        return jsonify({'status': 'success', 'message': 'Morning routine marked as complete'})
+    except Exception as e:
+        logger.error(f"❌ Error marking morning routine complete: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/mark-afternoon-complete', methods=['POST'])
 def api_mark_afternoon_complete():
-    if hasattr(dashboard, 'workflow'):
-        dashboard.workflow.afternoon_completion_time = datetime.now()
-        return jsonify({'status': 'ok', 'time': dashboard.workflow.afternoon_completion_time.strftime('%H:%M ET')})
-    return jsonify({'error': 'Failed to mark afternoon complete'}), 500
+    """Mark afternoon checkin as complete"""
+    try:
+        notes = request.json.get('notes', 'Afternoon checkin completed') if request.json else 'Afternoon checkin completed'
+        dashboard.monitor.workflow_tracker.mark_workflow_complete('afternoon_checkin', notes)
+        logger.info("✅ Afternoon checkin marked as complete")
+        return jsonify({'status': 'success', 'message': 'Afternoon checkin marked as complete'})
+    except Exception as e:
+        logger.error(f"❌ Error marking afternoon checkin complete: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/mark-eod-complete', methods=['POST'])
 def api_mark_eod_complete():
-    if hasattr(dashboard, 'workflow'):
-        dashboard.workflow.eod_completion_time = datetime.now()
-        return jsonify({'status': 'ok', 'time': dashboard.workflow.eod_completion_time.strftime('%H:%M ET')})
-    return jsonify({'error': 'Failed to mark EOD complete'}), 500
+    """Mark end of day routine as complete"""
+    try:
+        notes = request.json.get('notes', 'End of day routine completed') if request.json else 'End of day routine completed'
+        dashboard.monitor.workflow_tracker.mark_workflow_complete('eod_routine', notes)
+        logger.info("✅ End of day routine marked as complete")
+        return jsonify({'status': 'success', 'message': 'End of day routine marked as complete'})
+    except Exception as e:
+        logger.error(f"❌ Error marking EOD routine complete: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/mark-weekly-complete', methods=['POST'])
+def api_mark_weekly_complete():
+    """Mark weekly review as complete"""
+    try:
+        notes = request.json.get('notes', 'Weekly review completed') if request.json else 'Weekly review completed'
+        dashboard.monitor.workflow_tracker.mark_workflow_complete('weekly_review', notes)
+        logger.info("✅ Weekly review marked as complete")
+        return jsonify({'status': 'success', 'message': 'Weekly review marked as complete'})
+    except Exception as e:
+        logger.error(f"❌ Error marking weekly review complete: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/income-tracking')
 def get_income_tracking():
