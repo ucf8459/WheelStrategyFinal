@@ -5430,10 +5430,11 @@ class WheelDashboard:
             raise RuntimeError(f"Failed to get IBKR delta for {contract.symbol}: {e}")
     
     def _get_ibkr_delta(self, contract, contract_type):
-        """Sync wrapper for async delta retrieval - REMOVED to prevent event loop conflicts"""
-        # This method has been completely removed to prevent event loop conflicts
+        """Sync wrapper for async delta retrieval - COMPLETELY DISABLED"""
+        # This method has been completely disabled to prevent event loop conflicts
         # All delta calculations should use _get_ibkr_delta_async or _calculate_estimated_delta
-        raise RuntimeError("_get_ibkr_delta has been removed - use _get_ibkr_delta_async or _calculate_estimated_delta instead")
+        # DO NOT CALL THIS METHOD - it will cause event loop conflicts
+        raise RuntimeError("_get_ibkr_delta has been completely disabled - use _get_ibkr_delta_async or _calculate_estimated_delta instead")
 
     def _get_delta_from_cache(self, symbol):
         """Get delta value from the background service cache"""
