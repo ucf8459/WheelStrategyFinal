@@ -13,7 +13,7 @@ import asyncio
 from enum import Enum
 import threading
 import schedule
-import time
+import time as time_module
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO
 import smtplib
