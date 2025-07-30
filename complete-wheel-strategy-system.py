@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import yfinance as yf
 import logging
 import asyncio
@@ -307,10 +307,10 @@ class WorkflowTracker:
         current_time = datetime.now().time()
         
         workflows = [
-            ('morning_routine', datetime.time(9, 0)),
-            ('afternoon_checkin', datetime.time(14, 30)),
-            ('eod_routine', datetime.time(16, 0)),
-            ('weekly_review', datetime.time(16, 30))
+            ('morning_routine', time(9, 0)),
+            ('afternoon_checkin', time(14, 30)),
+            ('eod_routine', time(16, 0)),
+            ('weekly_review', time(16, 30))
         ]
         
         for workflow_name, planned_time in workflows:
