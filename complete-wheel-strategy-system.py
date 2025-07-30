@@ -5473,9 +5473,9 @@ class WheelDashboard:
     async def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
         """Get delta from background service cache or fallback to estimate"""
         try:
-            # For stocks, delta is always 1.0
+            # For stocks, no delta calculation needed
             if contract_type == 'STK':
-                return 1.0
+                return None
             elif contract_type != 'OPT':
                 return 0.0
             
@@ -5935,7 +5935,7 @@ def get_positions():
                                             else:  # OTM
                                                 estimated_delta = 0.2
                             elif hasattr(contract, 'right') and contract.right == '0':  # Stock
-                                estimated_delta = 1.0  # Stock delta is always 1.0
+                                estimated_delta = None  # No delta for stocks
                             
                             # Calculate Delta risk thresholds
                             delta_risk = 'low'  # Default
@@ -5963,14 +5963,17 @@ def get_positions():
                                         close_recommendation = 'Consider closing to limit losses (-25%+)'
                                     elif pnl_pct <= -10:
                                         close_recommendation = 'Monitor closely - approaching loss threshold'
-                            # Determine risk level based on absolute delta value
-                            abs_delta = abs(estimated_delta)
-                            if abs_delta > 0.50:
-                                delta_risk = 'high'
-                            elif abs_delta > 0.30:
-                                delta_risk = 'medium'
+                            # Determine risk level based on absolute delta value (only for options)
+                            if estimated_delta is not None:
+                                abs_delta = abs(estimated_delta)
+                                if abs_delta > 0.50:
+                                    delta_risk = 'high'
+                                elif abs_delta > 0.30:
+                                    delta_risk = 'medium'
+                                else:
+                                    delta_risk = 'low'
                             else:
-                                delta_risk = 'low'
+                                delta_risk = 'none'  # No delta risk for stocks
                             
                             position_data = {
                                 'symbol': contract.symbol,
