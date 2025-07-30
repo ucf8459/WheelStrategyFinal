@@ -98,6 +98,46 @@
             background-color: var(--warning);
         }
         
+        /* DTE Color Coding */
+        .dte-red {
+            color: var(--danger) !important;
+            font-weight: bold;
+        }
+        
+        .dte-yellow {
+            color: var(--warning) !important;
+            font-weight: bold;
+        }
+        
+        .dte-white {
+            color: var(--dark) !important;
+        }
+        
+        /* Delta Risk Indicators */
+        .delta-high {
+            background-color: var(--danger) !important;
+            color: white !important;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .delta-medium {
+            background-color: var(--warning) !important;
+            color: var(--dark) !important;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .delta-low {
+            background-color: var(--success) !important;
+            color: white !important;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
         .status-danger {
             background-color: var(--danger);
         }
@@ -461,21 +501,31 @@
                     tr.innerHTML = `
                         <td>${pos.symbol}</td>
                         <td>${pos.type}</td>
+                        <td>${pos.quantity || '-'}</td>
                         <td>${pos.strike ? '$' + pos.strike.toFixed(2) : '-'}</td>
                         <td>${pos.expiry || '-'}</td>
-                        <td>${pos.dte || '-'}</td>
-                        <td>${pos.premium ? '$' + pos.premium.toFixed(2) : '-'}</td>
+                        <td class="dte-${pos.dte_color || 'white'}">${pos.dte || '-'}</td>
+                        <td>${pos.stock_price ? '$' + pos.stock_price.toFixed(2) : '-'}</td>
+                        <td>${pos.premium ? '$' + pos.premium.toFixed(2) : (pos.type === 'STOCK' ? '-' : 'N/A')}</td>
                         <td>
                             <span class="badge ${pos.pnl >= 0 ? 'badge-success' : 'badge-warning'}">
                                 ${pos.pnl > 0 ? '+' : ''}${pos.pnl}%
                             </span>
                         </td>
-                        <td>${pos.delta || '-'}</td>
                         <td>
-                            ${pos.status === 'ROLLING' ? '<button class="btn btn-danger btn-sm">Roll (Defensive)</button>' :
-                              pos.status === 'CLOSING' ? '<button class="btn btn-success btn-sm">Close</button>' :
-                              pos.status === 'ACTIVE' ? '<button class="btn btn-secondary btn-sm">Monitor</button>' :
-                              '<button class="btn btn-primary btn-sm">View</button>'}
+                            <span class="delta-${pos.delta_risk || 'low'}">
+                                ${pos.estimated_delta ? pos.estimated_delta.toFixed(2) : (pos.delta || '-')}
+                            </span>
+                        </td>
+                        <td>
+                            ${pos.status === 'ROLLING' ? '<button class="btn btn-danger btn-sm" title="High Priority - Roll Defensive">🚨 Roll (Defensive)</button>' :
+                              pos.status === 'CLOSING' ? '<button class="btn btn-success btn-sm" title="Close Position">✅ Close</button>' :
+                              pos.close_recommendation && pos.close_recommendation.includes('Strong profit') ? '<button class="btn btn-success btn-sm" title="' + pos.close_recommendation + '">💰 Close (Profit)</button>' :
+                              pos.close_recommendation && pos.close_recommendation.includes('losses') ? '<button class="btn btn-danger btn-sm" title="' + pos.close_recommendation + '">🛑 Close (Loss)</button>' :
+                              pos.dte_color === 'red' ? '<button class="btn btn-warning btn-sm" title="' + (pos.roll_recommendation || 'Medium Priority - Expiring Soon') + '">⚠️ Roll</button>' :
+                              pos.delta_risk === 'high' ? '<button class="btn btn-warning btn-sm" title="' + (pos.roll_recommendation || 'Medium Priority - High Delta Risk') + '">⚠️ Monitor</button>' :
+                              pos.status === 'ACTIVE' ? '<button class="btn btn-secondary btn-sm" title="' + (pos.roll_recommendation || pos.close_recommendation || 'Low Priority - Normal Monitoring') + '">📊 Monitor</button>' :
+                              '<button class="btn btn-primary btn-sm" title="' + (pos.roll_recommendation || pos.close_recommendation || 'View Details') + '">👁️ View</button>'}
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -826,6 +876,60 @@
                          }
                      }
         
+        // Update premium tracking
+        function updatePremiumTracking(premiumData) {
+            if (!premiumData) return;
+            
+            // Update Today's Premium
+            const todaysPremiumElement = document.getElementById('todays-premium');
+            const todaysPremiumProgressElement = document.getElementById('todays-premium-progress');
+            const todaysPremiumCard = document.getElementById('todays-premium-card');
+            const todaysPremiumSampleIndicator = document.getElementById('todays-premium-sample-indicator');
+            
+            if (todaysPremiumElement && premiumData.todays_premium !== undefined) {
+                const premium = premiumData.todays_premium;
+                todaysPremiumElement.textContent = `$${premium.toFixed(2)}`;
+                todaysPremiumElement.style.color = premium > 0 ? 'var(--success)' : 'var(--dark)';
+                
+                if (todaysPremiumProgressElement && premiumData.daily_progress_text) {
+                    todaysPremiumProgressElement.textContent = premiumData.daily_progress_text;
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (todaysPremiumCard && todaysPremiumSampleIndicator) {
+                    // For now, assume all premium data is real
+                    todaysPremiumCard.classList.remove('has-sample-data');
+                    todaysPremiumSampleIndicator.style.display = 'none';
+                }
+            }
+            
+            // Update MTD Premium
+            const mtdPremiumElement = document.getElementById('mtd-premium');
+            const mtdPremiumProgressElement = document.getElementById('mtd-premium-progress');
+            const mtdPremiumCard = document.getElementById('mtd-premium-card');
+            const mtdPremiumSampleIndicator = document.getElementById('mtd-premium-sample-indicator');
+            
+            if (mtdPremiumElement && premiumData.mtd_premium_collected !== undefined) {
+                const premium = premiumData.mtd_premium_collected;
+                mtdPremiumElement.textContent = `$${premium.toFixed(2)}`;
+                mtdPremiumElement.style.color = premium > 0 ? 'var(--success)' : 'var(--dark)';
+                
+                if (mtdPremiumProgressElement && premiumData.mtd_progress_text) {
+                    const target = premiumData.monthly_target;
+                    const progress = premiumData.mtd_progress_percentage;
+                    const daysRemaining = premiumData.days_remaining;
+                    mtdPremiumProgressElement.textContent = `${progress.toFixed(1)}% of target (${daysRemaining} days left)`;
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (mtdPremiumCard && mtdPremiumSampleIndicator) {
+                    // For now, assume all premium data is real
+                    mtdPremiumCard.classList.remove('has-sample-data');
+                    mtdPremiumSampleIndicator.style.display = 'none';
+                }
+            }
+        }
+        
         // Update decision support and counter
         function updateDecisionSupport(data) {
             if (!data) return;
@@ -1111,6 +1215,42 @@
                 })
                 .catch(error => console.error('Error fetching realized P&L data:', error));
             
+            // Fetch premium tracking data
+            fetch('/api/premium-tracking')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Premium tracking data:', data);
+                    updatePremiumTracking(data);
+                })
+                .catch(error => console.error('Error fetching premium tracking data:', error));
+            
+            // Fetch correlation monitoring data
+            fetch('/api/correlation-monitoring')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Correlation monitoring data:', data);
+                    updateCorrelationMonitoring(data);
+                })
+                .catch(error => console.error('Error fetching correlation monitoring data:', error));
+            
+            // Fetch risk creep detection data
+            fetch('/api/risk-creep-detection')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Risk creep detection data:', data);
+                    updateRiskCreepDetection(data);
+                })
+                .catch(error => console.error('Error fetching risk creep detection data:', error));
+            
+            // Fetch sector limit enforcement data
+            fetch('/api/sector-limit-enforcement')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Sector limit enforcement data:', data);
+                    updateSectorLimitEnforcement(data);
+                })
+                .catch(error => console.error('Error fetching sector limit enforcement data:', error));
+            
             // Fetch decision support data
             fetch('/api/decision-support')
                 .then(response => response.json())
@@ -1123,6 +1263,304 @@
             // Update system status every 30 seconds
             setInterval(updateSystemStatus, 30000);
         };
+        
+        // Update correlation monitoring
+        function updateCorrelationMonitoring(correlationData) {
+            if (!correlationData) return;
+            
+            // Update Sector Correlation
+            const correlationElement = document.getElementById('correlation-value');
+            const correlationRiskElement = document.getElementById('correlation-risk');
+            const correlationCard = document.getElementById('correlation-card');
+            const correlationSampleIndicator = document.getElementById('correlation-sample-indicator');
+            
+            if (correlationElement && correlationData.correlation !== undefined) {
+                const correlation = correlationData.correlation_percentage;
+                correlationElement.textContent = `${correlation.toFixed(1)}%`;
+                
+                // Set color based on risk level
+                const riskColor = correlationData.risk_color;
+                correlationElement.style.color = `var(--${riskColor})`;
+                
+                if (correlationRiskElement && correlationData.risk_text) {
+                    correlationRiskElement.textContent = correlationData.risk_text;
+                    correlationRiskElement.style.color = `var(--${riskColor})`;
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (correlationCard && correlationSampleIndicator) {
+                    // For now, assume all correlation data is real
+                    correlationCard.classList.remove('has-sample-data');
+                    correlationSampleIndicator.style.display = 'none';
+                }
+            }
+            
+            // Update Market Breadth
+            const marketBreadthElement = document.getElementById('market-breadth-value');
+            const marketBreadthStatusElement = document.getElementById('market-breadth-status');
+            const marketBreadthCard = document.getElementById('market-breadth-card');
+            const marketBreadthSampleIndicator = document.getElementById('market-breadth-sample-indicator');
+            
+            if (marketBreadthElement && correlationData.market_breadth !== undefined) {
+                const breadth = correlationData.market_breadth;
+                marketBreadthElement.textContent = breadth;
+                
+                // Set color based on market health
+                let breadthColor = 'dark';
+                if (breadth === 'Strong') breadthColor = 'success';
+                else if (breadth === 'Weakening') breadthColor = 'warning';
+                else if (breadth === 'Weak' || breadth === 'Very Weak') breadthColor = 'danger';
+                
+                marketBreadthElement.style.color = `var(--${breadthColor})`;
+                
+                if (marketBreadthStatusElement) {
+                    marketBreadthStatusElement.textContent = `Health: ${breadth}`;
+                    marketBreadthStatusElement.style.color = `var(--${breadthColor})`;
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (marketBreadthCard && marketBreadthSampleIndicator) {
+                    // For now, assume all market breadth data is real
+                    marketBreadthCard.classList.remove('has-sample-data');
+                    marketBreadthSampleIndicator.style.display = 'none';
+                }
+            }
+            
+            // Add crisis alert if active
+            if (correlationData.crisis_active) {
+                const crisisAlert = document.createElement('div');
+                crisisAlert.className = 'crisis-alert';
+                crisisAlert.style.cssText = `
+                    background: var(--danger);
+                    color: white;
+                    padding: 10px;
+                    margin: 10px 0;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    text-align: center;
+                `;
+                crisisAlert.textContent = `🚨 CORRELATION CRISIS: ${correlationData.crisis_actions_text}`;
+                
+                // Add to dashboard if not already present
+                const existingAlert = document.querySelector('.crisis-alert');
+                if (!existingAlert) {
+                    const dashboardContainer = document.querySelector('.dashboard-container');
+                    if (dashboardContainer) {
+                        dashboardContainer.insertBefore(crisisAlert, dashboardContainer.firstChild);
+                    }
+                }
+            } else {
+                // Remove crisis alert if no longer active
+                const existingAlert = document.querySelector('.crisis-alert');
+                if (existingAlert) {
+                    existingAlert.remove();
+                }
+            }
+        }
+        
+        // Update risk creep detection
+        function updateRiskCreepDetection(riskCreepData) {
+            if (!riskCreepData) return;
+            
+            // Update Overall Risk Creep
+            const riskCreepElement = document.getElementById('risk-creep-value');
+            const riskCreepStatusElement = document.getElementById('risk-creep-status');
+            const riskCreepCard = document.getElementById('risk-creep-card');
+            const riskCreepSampleIndicator = document.getElementById('risk-creep-sample-indicator');
+            
+            if (riskCreepElement && riskCreepData.total_risk_score !== undefined) {
+                const riskScore = riskCreepData.total_risk_score;
+                riskCreepElement.textContent = `${riskScore.toFixed(0)}%`;
+                
+                // Set color based on risk level
+                const riskColor = riskCreepData.risk_color;
+                riskCreepElement.style.color = `var(--${riskColor})`;
+                
+                if (riskCreepStatusElement && riskCreepData.risk_text) {
+                    riskCreepStatusElement.textContent = riskCreepData.risk_text;
+                    riskCreepStatusElement.style.color = `var(--${riskColor})`;
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (riskCreepCard && riskCreepSampleIndicator) {
+                    // For now, assume all risk creep data is real
+                    riskCreepCard.classList.remove('has-sample-data');
+                    riskCreepSampleIndicator.style.display = 'none';
+                }
+            }
+            
+            // Update DTE Creep
+            const dteCreepElement = document.getElementById('dte-creep-value');
+            const dteCreepStatusElement = document.getElementById('dte-creep-status');
+            const dteCreepCard = document.getElementById('dte-creep-card');
+            const dteCreepSampleIndicator = document.getElementById('dte-creep-sample-indicator');
+            
+            if (dteCreepElement && riskCreepData.dte_creep) {
+                const dteCreep = riskCreepData.dte_creep;
+                const score = dteCreep.score || 0;
+                dteCreepElement.textContent = `${score.toFixed(0)}%`;
+                
+                // Set color based on DTE creep score
+                let dteColor = 'success';
+                if (score > 75) dteColor = 'danger';
+                else if (score > 50) dteColor = 'warning';
+                else if (score > 25) dteColor = 'warning';
+                
+                dteCreepElement.style.color = `var(--${dteColor})`;
+                
+                if (dteCreepStatusElement && dteCreep.message) {
+                    dteCreepStatusElement.textContent = dteCreep.message;
+                    dteCreepStatusElement.style.color = `var(--${dteColor})`;
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (dteCreepCard && dteCreepSampleIndicator) {
+                    // For now, assume all DTE creep data is real
+                    dteCreepCard.classList.remove('has-sample-data');
+                    dteCreepSampleIndicator.style.display = 'none';
+                }
+            }
+            
+            // Add risk alerts if any detected
+            if (riskCreepData.alerts && riskCreepData.alerts.length > 0) {
+                const riskAlert = document.createElement('div');
+                riskAlert.className = 'risk-alert';
+                riskAlert.style.cssText = `
+                    background: var(--warning);
+                    color: white;
+                    padding: 10px;
+                    margin: 10px 0;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    text-align: center;
+                `;
+                
+                const alertMessages = riskCreepData.alerts.map(alert => 
+                    `${alert.message} (${alert.action})`
+                ).join('; ');
+                
+                riskAlert.textContent = `⚠️ RISK CREEP DETECTED: ${alertMessages}`;
+                
+                // Add to dashboard if not already present
+                const existingAlert = document.querySelector('.risk-alert');
+                if (!existingAlert) {
+                    const dashboardContainer = document.querySelector('.dashboard-container');
+                    if (dashboardContainer) {
+                        dashboardContainer.insertBefore(riskAlert, dashboardContainer.firstChild);
+                    }
+                }
+            } else {
+                // Remove risk alert if no longer active
+                const existingAlert = document.querySelector('.risk-alert');
+                if (existingAlert) {
+                    existingAlert.remove();
+                }
+            }
+        }
+        
+        // Update sector limit enforcement
+        function updateSectorLimitEnforcement(sectorLimitData) {
+            if (!sectorLimitData) return;
+            
+            // Update Sector Limit
+            const sectorLimitElement = document.getElementById('sector-limit-value');
+            const sectorLimitStatusElement = document.getElementById('sector-limit-status');
+            const sectorLimitCard = document.getElementById('sector-limit-card');
+            const sectorLimitSampleIndicator = document.getElementById('sector-limit-sample-indicator');
+            
+            if (sectorLimitElement && sectorLimitData.total_sector_risk !== undefined) {
+                const riskScore = sectorLimitData.total_sector_risk;
+                sectorLimitElement.textContent = `${riskScore.toFixed(0)}%`;
+                
+                // Set color based on risk level
+                const riskColor = sectorLimitData.risk_color;
+                sectorLimitElement.style.color = `var(--${riskColor})`;
+                
+                if (sectorLimitStatusElement && sectorLimitData.risk_text) {
+                    sectorLimitStatusElement.textContent = sectorLimitData.risk_text;
+                    sectorLimitStatusElement.style.color = `var(--${riskColor})`;
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (sectorLimitCard && sectorLimitSampleIndicator) {
+                    // For now, assume all sector limit data is real
+                    sectorLimitCard.classList.remove('has-sample-data');
+                    sectorLimitSampleIndicator.style.display = 'none';
+                }
+            }
+            
+            // Update Sector Rebalancing
+            const sectorRebalancingElement = document.getElementById('sector-rebalancing-value');
+            const sectorRebalancingStatusElement = document.getElementById('sector-rebalancing-status');
+            const sectorRebalancingCard = document.getElementById('sector-rebalancing-card');
+            const sectorRebalancingSampleIndicator = document.getElementById('sector-rebalancing-sample-indicator');
+            
+            if (sectorRebalancingElement && sectorLimitData.rebalancing_recommendations) {
+                const recommendations = sectorLimitData.rebalancing_recommendations;
+                const highPriorityCount = recommendations.filter(r => r.priority === 'high').length;
+                const moderatePriorityCount = recommendations.filter(r => r.priority === 'moderate').length;
+                
+                if (highPriorityCount > 0) {
+                    sectorRebalancingElement.textContent = `${highPriorityCount} High`;
+                    sectorRebalancingElement.style.color = 'var(--danger)';
+                } else if (moderatePriorityCount > 0) {
+                    sectorRebalancingElement.textContent = `${moderatePriorityCount} Mod`;
+                    sectorRebalancingElement.style.color = 'var(--warning)';
+                } else {
+                    sectorRebalancingElement.textContent = 'None';
+                    sectorRebalancingElement.style.color = 'var(--success)';
+                }
+                
+                if (sectorRebalancingStatusElement) {
+                    const totalRecommendations = recommendations.length;
+                    sectorRebalancingStatusElement.textContent = `${totalRecommendations} actions needed`;
+                    sectorRebalancingStatusElement.style.color = totalRecommendations > 0 ? 'var(--warning)' : 'var(--success)';
+                }
+                
+                // Handle sample data indicator (if needed in future)
+                if (sectorRebalancingCard && sectorRebalancingSampleIndicator) {
+                    // For now, assume all sector rebalancing data is real
+                    sectorRebalancingCard.classList.remove('has-sample-data');
+                    sectorRebalancingSampleIndicator.style.display = 'none';
+                }
+            }
+            
+            // Add sector alerts if any detected
+            if (sectorLimitData.sector_alerts && sectorLimitData.sector_alerts.length > 0) {
+                const sectorAlert = document.createElement('div');
+                sectorAlert.className = 'sector-alert';
+                sectorAlert.style.cssText = `
+                    background: var(--warning);
+                    color: white;
+                    padding: 10px;
+                    margin: 10px 0;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    text-align: center;
+                `;
+                
+                const alertMessages = sectorLimitData.sector_alerts.map(alert => 
+                    `${alert.message} (${alert.action})`
+                ).join('; ');
+                
+                sectorAlert.textContent = `⚠️ SECTOR LIMIT EXCEEDED: ${alertMessages}`;
+                
+                // Add to dashboard if not already present
+                const existingAlert = document.querySelector('.sector-alert');
+                if (!existingAlert) {
+                    const dashboardContainer = document.querySelector('.dashboard-container');
+                    if (dashboardContainer) {
+                        dashboardContainer.insertBefore(sectorAlert, dashboardContainer.firstChild);
+                    }
+                }
+            } else {
+                // Remove sector alert if no longer active
+                const existingAlert = document.querySelector('.sector-alert');
+                if (existingAlert) {
+                    existingAlert.remove();
+                }
+            }
+        }
     </script>
 </head>
 <body>
@@ -1191,6 +1629,54 @@
                             <div id="win-rate" class="metric-value">Loading...</div>
                             <div class="section-label">Last 30 Days</div>
                         </div>
+                        <div class="metric-card" id="todays-premium-card">
+                            <div class="metric-label">Today's Premium</div>
+                            <div id="todays-premium" class="metric-value">Loading...</div>
+                            <div id="todays-premium-progress" class="section-label">--</div>
+                            <div id="todays-premium-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
+                        <div class="metric-card" id="mtd-premium-card">
+                            <div class="metric-label">MTD Premium</div>
+                            <div id="mtd-premium" class="metric-value">Loading...</div>
+                            <div id="mtd-premium-progress" class="section-label">--</div>
+                            <div id="mtd-premium-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
+                        <div class="metric-card" id="correlation-card">
+                            <div class="metric-label">Sector Correlation</div>
+                            <div id="correlation-value" class="metric-value">Loading...</div>
+                            <div id="correlation-risk" class="section-label">--</div>
+                            <div id="correlation-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
+                        <div class="metric-card" id="market-breadth-card">
+                            <div class="metric-label">Market Breadth</div>
+                            <div id="market-breadth-value" class="metric-value">Loading...</div>
+                            <div id="market-breadth-status" class="section-label">--</div>
+                            <div id="market-breadth-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
+                        <div class="metric-card" id="risk-creep-card">
+                            <div class="metric-label">Risk Creep</div>
+                            <div id="risk-creep-value" class="metric-value">Loading...</div>
+                            <div id="risk-creep-status" class="section-label">--</div>
+                            <div id="risk-creep-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
+                        <div class="metric-card" id="dte-creep-card">
+                            <div class="metric-label">DTE Creep</div>
+                            <div id="dte-creep-value" class="metric-value">Loading...</div>
+                            <div id="dte-creep-status" class="section-label">--</div>
+                            <div id="dte-creep-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
+                        <div class="metric-card" id="sector-limit-card">
+                            <div class="metric-label">Sector Limit</div>
+                            <div id="sector-limit-value" class="metric-value">Loading...</div>
+                            <div id="sector-limit-status" class="section-label">--</div>
+                            <div id="sector-limit-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
+                        <div class="metric-card" id="sector-rebalancing-card">
+                            <div class="metric-label">Sector Rebalancing</div>
+                            <div id="sector-rebalancing-value" class="metric-value">Loading...</div>
+                            <div id="sector-rebalancing-status" class="section-label">--</div>
+                            <div id="sector-rebalancing-sample-indicator" class="sample-indicator" style="display: none;">SAMPLE DATA</div>
+                        </div>
                     </div>
                     
                     <div class="chart-container">
@@ -1212,9 +1698,11 @@
                             <tr>
                                 <th>Symbol</th>
                                 <th>Type</th>
+                                <th>Qty</th>
                                 <th>Strike</th>
                                 <th>Expiry</th>
                                 <th>DTE</th>
+                                <th>Stock</th>
                                 <th>Premium</th>
                                 <th>P&L %</th>
                                 <th>Delta</th>
@@ -1223,7 +1711,7 @@
                         </thead>
                         <tbody>
                             <tr>
-                                <td colspan="9" style="text-align: center;">Loading positions...</td>
+                                <td colspan="11" style="text-align: center;">Loading positions...</td>
                             </tr>
                         </tbody>
                     </table>
