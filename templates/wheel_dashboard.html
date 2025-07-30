@@ -185,6 +185,12 @@
             color: white;
         }
         
+        .text-muted {
+            color: #6c757d;
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+        
         .metric-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -518,7 +524,8 @@
                             </span>
                         </td>
                         <td>
-                            ${pos.status === 'ROLLING' ? '<button class="btn btn-danger btn-sm" title="High Priority - Roll Defensive">🚨 Roll (Defensive)</button>' :
+                            ${pos.type === 'Stock' ? '<span class="text-muted">No Actions</span>' :
+                              pos.status === 'ROLLING' ? '<button class="btn btn-danger btn-sm" title="High Priority - Roll Defensive">🚨 Roll (Defensive)</button>' :
                               pos.status === 'CLOSING' ? '<button class="btn btn-success btn-sm" title="Close Position">✅ Close</button>' :
                               pos.close_recommendation && pos.close_recommendation.includes('Strong profit') ? '<button class="btn btn-success btn-sm" title="' + pos.close_recommendation + '">💰 Close (Profit)</button>' :
                               pos.close_recommendation && pos.close_recommendation.includes('losses') ? '<button class="btn btn-danger btn-sm" title="' + pos.close_recommendation + '">🛑 Close (Loss)</button>' :

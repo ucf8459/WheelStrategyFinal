@@ -4402,7 +4402,7 @@ def handle_connect():
         print(f'Error sending initial data: {e}')
 
 @socketio.on('disconnect')
-def handle_disconnect():
+def handle_disconnect(data=None):
     print('\n=== Client Disconnected ===')
     try:
         print('Client session ID:', request.sid if hasattr(request, 'sid') else 'unknown')
@@ -5173,8 +5173,10 @@ class WheelDashboard:
             
             print("\n2. FETCHING ACCOUNT SUMMARY")
             try:
-                # Use synchronous method to avoid event loop issues
-                account_summary = self.monitor.ib.accountSummary()
+                # Use thread executor to avoid event loop conflicts
+                import asyncio
+                loop = asyncio.get_event_loop()
+                account_summary = await loop.run_in_executor(None, self.monitor.ib.accountSummary)
                 print("Account summary items:")
                 for item in account_summary:
                     print(f"{item.tag}: {item.value}")
@@ -5257,8 +5259,10 @@ class WheelDashboard:
         try:
             print("\n=== Fetching Positions ===")
             
-            # Use the working synchronous portfolio() method
-            portfolio = self.monitor.ib.portfolio()
+            # Use thread executor to avoid event loop conflicts
+            import asyncio
+            loop = asyncio.get_event_loop()
+            portfolio = await loop.run_in_executor(None, self.monitor.ib.portfolio)
             print(f"Got {len(portfolio)} portfolio items")
             
             for item in portfolio:
@@ -5487,93 +5491,98 @@ class WheelDashboard:
             # Fallback to estimated delta if cache unavailable
             logger.warning(f"⚠️ {contract.symbol}: Using fallback delta estimate")
             
-            try:
-                # Get current stock price for delta estimation
-                stock_price = None
-                
-                # Try to get price from position data first
-                if hasattr(contract, 'marketPrice') and contract.marketPrice:
-                    # For puts, estimate stock price from option price and strike
-                    if contract.right == 'P':
-                        # Rough estimate: stock price ≈ strike - (option_price * 2)
-                        option_price = abs(contract.marketPrice)
-                        stock_price = strike - (option_price * 2)
-                        # Ensure reasonable bounds
-                        stock_price = max(stock_price, strike * 0.7)
-                        stock_price = min(stock_price, strike * 1.3)
-                    else:  # Calls
-                        # Rough estimate: stock price ≈ strike + (option_price * 2)
-                        option_price = abs(contract.marketPrice)
-                        stock_price = strike + (option_price * 2)
-                        # Ensure reasonable bounds
-                        stock_price = max(stock_price, strike * 0.7)
-                        stock_price = min(stock_price, strike * 1.3)
-                
-                if stock_price is None:
-                    # Fallback to strike price if we can't estimate
-                    stock_price = strike
-                
-                # Calculate estimated delta based on moneyness and time to expiry
-                moneyness = stock_price / strike
-                
-                # Get days to expiry for more accurate delta estimation
-                dte = 30  # Default to 30 days if we can't determine
-                if hasattr(contract, 'lastTradeDateOrContractMonth'):
-                    try:
-                        expiry_date = datetime.strptime(contract.lastTradeDateOrContractMonth, '%Y%m%d')
-                        dte = (expiry_date - datetime.now()).days
-                        dte = max(dte, 1)  # Ensure positive
-                    except:
-                        dte = 30
-                
-                # More sophisticated delta estimation based on moneyness and DTE
-                if contract.right == 'C':  # Call option
-                    if moneyness > 1.05:  # ITM
-                        delta = 0.8 + (moneyness - 1.05) * 0.4
-                    elif moneyness > 0.95:  # Near ATM
-                        delta = 0.4 + (moneyness - 0.95) * 0.4
-                    elif moneyness > 0.85:  # OTM
-                        delta = 0.2 + (moneyness - 0.85) * 0.2
-                    else:  # Deep OTM
-                        delta = 0.1
-                    
-                    # Adjust for DTE - longer DTE means higher delta for ITM, lower for OTM
-                    if dte < 7:
-                        delta *= 0.8  # Short-term options have lower deltas
-                    elif dte > 45:
-                        delta *= 1.1  # Long-term options have higher deltas
-                        
-                else:  # Put option
-                    if moneyness < 0.95:  # ITM
-                        delta = -0.8 - (0.95 - moneyness) * 0.4
-                    elif moneyness < 1.05:  # Near ATM
-                        delta = -0.4 - (1.05 - moneyness) * 0.4
-                    elif moneyness < 1.15:  # OTM
-                        delta = -0.2 - (1.15 - moneyness) * 0.2
-                    else:  # Deep OTM
-                        delta = -0.1
-                    
-                    # Adjust for DTE - longer DTE means lower delta (more negative) for ITM
-                    if dte < 7:
-                        delta *= 0.8  # Short-term options have higher deltas (less negative)
-                    elif dte > 45:
-                        delta *= 1.1  # Long-term options have lower deltas (more negative)
-                
-                # Ensure delta is within reasonable bounds
-                if contract.right == 'C':
-                    delta = max(0.01, min(0.99, delta))
-                else:
-                    delta = max(-0.99, min(-0.01, delta))
-                
-                logger.info(f"📊 {contract.symbol}: Fallback delta {delta:.2f} (price=${stock_price:.2f}, strike=${strike}, type={contract.right})")
-                return delta
-                        
-            except Exception as e:
-                logger.error(f"Error calculating fallback delta for {contract.symbol}: {e}")
-                return 0.0
+            # Use estimated delta calculation to avoid event loop conflicts
+            return await self._calculate_estimated_delta(contract, strike)
                 
         except Exception as e:
             logger.error(f"Error in _calculate_position_delta for {contract.symbol}: {e}")
+            return 0.0
+    
+    async def _calculate_estimated_delta(self, contract, strike):
+        """Calculate estimated delta without IBKR calls to avoid event loop conflicts"""
+        try:
+            # Get current stock price for delta estimation
+            stock_price = None
+            
+            # Try to get price from position data first
+            if hasattr(contract, 'marketPrice') and contract.marketPrice:
+                # For puts, estimate stock price from option price and strike
+                if contract.right == 'P':
+                    # Rough estimate: stock price ≈ strike - (option_price * 2)
+                    option_price = abs(contract.marketPrice)
+                    stock_price = strike - (option_price * 2)
+                    # Ensure reasonable bounds
+                    stock_price = max(stock_price, strike * 0.7)
+                    stock_price = min(stock_price, strike * 1.3)
+                else:  # Calls
+                    # Rough estimate: stock price ≈ strike + (option_price * 2)
+                    option_price = abs(contract.marketPrice)
+                    stock_price = strike + (option_price * 2)
+                    # Ensure reasonable bounds
+                    stock_price = max(stock_price, strike * 0.7)
+                    stock_price = min(stock_price, strike * 1.3)
+            
+            if stock_price is None:
+                # Fallback to strike price if we can't estimate
+                stock_price = strike
+            
+            # Calculate estimated delta based on moneyness and time to expiry
+            moneyness = stock_price / strike
+            
+            # Get days to expiry for more accurate delta estimation
+            dte = 30  # Default to 30 days if we can't determine
+            if hasattr(contract, 'lastTradeDateOrContractMonth'):
+                try:
+                    expiry_date = datetime.strptime(contract.lastTradeDateOrContractMonth, '%Y%m%d')
+                    dte = (expiry_date - datetime.now()).days
+                    dte = max(dte, 1)  # Ensure positive
+                except:
+                    dte = 30
+            
+            # More sophisticated delta estimation based on moneyness and DTE
+            if contract.right == 'C':  # Call option
+                if moneyness > 1.05:  # ITM
+                    delta = 0.8 + (moneyness - 1.05) * 0.4
+                elif moneyness > 0.95:  # Near ATM
+                    delta = 0.4 + (moneyness - 0.95) * 0.4
+                elif moneyness > 0.85:  # OTM
+                    delta = 0.2 + (moneyness - 0.85) * 0.2
+                else:  # Deep OTM
+                    delta = 0.1
+                
+                # Adjust for DTE - longer DTE means higher delta for ITM, lower for OTM
+                if dte < 7:
+                    delta *= 0.8  # Short-term options have lower deltas
+                elif dte > 45:
+                    delta *= 1.1  # Long-term options have higher deltas
+                    
+            else:  # Put option
+                if moneyness < 0.95:  # ITM
+                    delta = -0.8 - (0.95 - moneyness) * 0.4
+                elif moneyness < 1.05:  # Near ATM
+                    delta = -0.4 - (1.05 - moneyness) * 0.4
+                elif moneyness < 1.15:  # OTM
+                    delta = -0.2 - (1.15 - moneyness) * 0.2
+                else:  # Deep OTM
+                    delta = -0.1
+                
+                # Adjust for DTE - longer DTE means lower delta (more negative) for ITM
+                if dte < 7:
+                    delta *= 0.8  # Short-term options have higher deltas (less negative)
+                elif dte > 45:
+                    delta *= 1.1  # Long-term options have lower deltas (more negative)
+            
+            # Ensure delta is within reasonable bounds
+            if contract.right == 'C':
+                delta = max(0.01, min(0.99, delta))
+            else:
+                delta = max(-0.99, min(-0.01, delta))
+            
+            logger.info(f"📊 {contract.symbol}: Estimated delta {delta:.2f} (price=${stock_price:.2f}, strike=${strike}, type={contract.right})")
+            return delta
+                    
+        except Exception as e:
+            logger.error(f"Error calculating estimated delta for {contract.symbol}: {e}")
             return 0.0
     
 
