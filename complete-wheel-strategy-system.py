@@ -35,54 +35,114 @@ import math
 # IBKR Greeks via tickOptionComputation (CORRECT METHOD)
 # -------------------------------------------------------------
 
-def _get_delta_from_ibkr(ib_connection, contract, logger):
+class GreeksCallbackHandler:
     """
-    Get live delta from IBKR using proper tickOptionComputation callback
-    Uses tick type #13 (Model Option Computation) as recommended by IBKR
+    Proper IBKR Greeks handler using tickOptionComputation callback
+    This implements the correct callback pattern for receiving Greeks from IBKR
     """
-    try:
-        # First, qualify the contract to ensure IBKR recognizes it
-        qualified_contracts = ib_connection.qualifyContracts(contract)
-        if not qualified_contracts:
-            logger.error(f"❌ {contract.symbol}: Contract not recognized by IBKR")
+    def __init__(self):
+        self.greeks_data = {}
+        self.pending_symbols = set()
+        
+    def clear_symbol(self, symbol):
+        """Clear data for a specific symbol"""
+        self.greeks_data.pop(symbol, None)
+        self.pending_symbols.discard(symbol)
+        
+    def add_pending(self, symbol):
+        """Mark symbol as pending Greeks data"""
+        self.pending_symbols.add(symbol)
+        
+    def store_greeks(self, symbol, tick_type, delta, gamma, vega, theta):
+        """Store Greeks data from tickOptionComputation callback"""
+        if symbol not in self.greeks_data:
+            self.greeks_data[symbol] = {}
+            
+        self.greeks_data[symbol][f'tick_{tick_type}'] = {
+            'delta': delta,
+            'gamma': gamma, 
+            'vega': vega,
+            'theta': theta
+        }
+        
+    def get_delta(self, symbol):
+        """Get best available delta for symbol"""
+        if symbol not in self.greeks_data:
             return None
             
-        qualified_contract = qualified_contracts[0]
-        
-        # Request market data with Model Option Computation (tick type #13)
-        # This is the correct way to get Greeks according to IBKR documentation
-        ticker = ib_connection.reqMktData(qualified_contract, "13", False, False)
-        
-        # Wait for optionComputation data (where Greeks are delivered)
-        max_attempts = 20  # 2 seconds total (20 * 0.1s)
-        for attempt in range(max_attempts):
-            util.sleep(0.1)  # 100ms intervals
-            
-            # Check if we have optionComputation data with delta
-            if hasattr(ticker, 'optionComputation') and ticker.optionComputation:
-                delta = ticker.optionComputation.delta
+        # Priority: Model (#13), Last (#12), Ask (#11), Bid (#10)
+        for tick_type in [13, 12, 11, 10]:
+            tick_key = f'tick_{tick_type}'
+            if tick_key in self.greeks_data[symbol]:
+                delta = self.greeks_data[symbol][tick_key]['delta']
                 if delta is not None and not math.isnan(delta):
-                    delta_value = float(delta)
-                    logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {delta_value:.3f} via tick #13")
-                    ib_connection.cancelMktData(qualified_contract)
-                    return delta_value
-            
-            # Also check modelGreeks as backup
-            if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
-                delta = ticker.modelGreeks.delta
-                if not math.isnan(delta):
-                    delta_value = float(delta)
-                    logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {delta_value:.3f} via modelGreeks")
-                    ib_connection.cancelMktData(qualified_contract)
-                    return delta_value
-        
-        # Timeout - clean up
-        ib_connection.cancelMktData(qualified_contract)
-        logger.warning(f"⏰ {contract.symbol}: No Greeks data received (may need market data subscription)")
+                    return float(delta)
         return None
+
+# Global Greeks handler instance
+_greeks_handler = GreeksCallbackHandler()
+
+def _get_delta_from_ibkr(ib_connection, contract, logger):
+    """
+    Get live delta from IBKR using ib_insync framework with tickOptionComputation
+    Uses all Greek tick types: #10 (Bid), #11 (Ask), #12 (Last), #13 (Model)
+    Leverages ib_insync's built-in event handling system
+    """
+    try:
+        symbol = contract.symbol
+        delta_received = None
+        
+        # Event handler for tickOptionComputation
+        def on_option_computation(ticker, field, computation):
+            nonlocal delta_received
+            if ticker.contract.symbol == symbol and computation and computation.delta is not None:
+                delta_received = float(computation.delta)
+                logger.info(f"📊 {symbol}: Received Greeks: delta={delta_received:.4f}, field={field}")
+        
+        # Request market data with all Greeks tick types as you specified
+        # Tick types: 10=BidOptionComp, 11=AskOptionComp, 12=LastOptionComp, 13=ModelOptionComp
+        ticker = ib_connection.reqMktData(contract, "10,11,12,13", False, False)
+        
+        # Connect the event handler
+        ticker.updateEvent += on_option_computation
+        
+        try:
+            # Wait for Greeks data to arrive
+            max_attempts = 50  # 5 seconds total (50 * 0.1s)
+            for attempt in range(max_attempts):
+                util.sleep(0.1)  # 100ms intervals
+                
+                # Check if we received delta
+                if delta_received is not None:
+                    logger.info(f"✅ {symbol}: LIVE IBKR delta {delta_received:.3f} via ib_insync event")
+                    return delta_received
+                
+                # Force an update to trigger events
+                if attempt % 5 == 0:
+                    ib_connection.waitOnUpdate(timeout=0.01)
+                
+                # Log progress
+                if attempt == 10:
+                    # Check what data we do have
+                    attrs = []
+                    if hasattr(ticker, 'bidSize') and ticker.bidSize: attrs.append(f"bid={ticker.bid}")
+                    if hasattr(ticker, 'askSize') and ticker.askSize: attrs.append(f"ask={ticker.ask}")
+                    if hasattr(ticker, 'lastSize') and ticker.lastSize: attrs.append(f"last={ticker.last}")
+                    logger.info(f"📊 {symbol}: Market data: {', '.join(attrs) if attrs else 'None'}")
+                elif attempt == 30:
+                    logger.info(f"📊 {symbol}: Still waiting for Greeks... (3s)")
+            
+            # Timeout
+            logger.warning(f"⏰ {symbol}: No Greeks received after 5s")
+            return None
+            
+        finally:
+            # Always clean up
+            ticker.updateEvent -= on_option_computation
+            ib_connection.cancelMktData(contract)
         
     except Exception as e:
-        logger.error(f"❌ {contract.symbol}: IBKR Greeks request failed: {e}")
+        logger.error(f"❌ {contract.symbol}: IBKR Greeks via ib_insync failed: {e}")
         return None
 
 # -------------------------------------------------------------
