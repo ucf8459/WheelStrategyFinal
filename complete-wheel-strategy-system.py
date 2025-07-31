@@ -82,14 +82,34 @@ class GreeksCallbackHandler:
 # Global Greeks handler instance
 _greeks_handler = GreeksCallbackHandler()
 
+# API Pacing Protection
+_last_greeks_request = {}
+_greeks_request_delay = 0.5  # 500ms between requests to prevent rate limits
+
 def _get_delta_from_ibkr(ib_connection, contract, logger):
     """
     Get live delta from IBKR using ib_insync framework with tickOptionComputation
     Uses all Greek tick types: #10 (Bid), #11 (Ask), #12 (Last), #13 (Model)
     Leverages ib_insync's built-in event handling system
+    INCLUDES API PACING PROTECTION to prevent rate limit violations
     """
+    import time
+    global _last_greeks_request, _greeks_request_delay
+    
     try:
         symbol = contract.symbol
+        
+        # API PACING PROTECTION: Ensure minimum delay between requests
+        now = time.time()
+        if symbol in _last_greeks_request:
+            time_since_last = now - _last_greeks_request[symbol]
+            if time_since_last < _greeks_request_delay:
+                sleep_time = _greeks_request_delay - time_since_last
+                logger.info(f"🕐 {symbol}: API pacing delay {sleep_time:.2f}s")
+                time.sleep(sleep_time)
+        
+        _last_greeks_request[symbol] = time.time()
+        
         delta_received = None
         
         # Event handler for tickOptionComputation
@@ -107,8 +127,8 @@ def _get_delta_from_ibkr(ib_connection, contract, logger):
         ticker.updateEvent += on_option_computation
         
         try:
-            # Wait for Greeks data to arrive
-            max_attempts = 50  # 5 seconds total (50 * 0.1s)
+            # Wait for Greeks data to arrive (reduced timeout for better pacing)
+            max_attempts = 30  # 3 seconds total (30 * 0.1s) - shorter for better throughput
             for attempt in range(max_attempts):
                 util.sleep(0.1)  # 100ms intervals
                 
@@ -117,23 +137,16 @@ def _get_delta_from_ibkr(ib_connection, contract, logger):
                     logger.info(f"✅ {symbol}: LIVE IBKR delta {delta_received:.3f} via ib_insync event")
                     return delta_received
                 
-                # Force an update to trigger events
-                if attempt % 5 == 0:
+                # Force an update to trigger events (less frequently)
+                if attempt % 10 == 0:
                     ib_connection.waitOnUpdate(timeout=0.01)
                 
-                # Log progress
-                if attempt == 10:
-                    # Check what data we do have
-                    attrs = []
-                    if hasattr(ticker, 'bidSize') and ticker.bidSize: attrs.append(f"bid={ticker.bid}")
-                    if hasattr(ticker, 'askSize') and ticker.askSize: attrs.append(f"ask={ticker.ask}")
-                    if hasattr(ticker, 'lastSize') and ticker.lastSize: attrs.append(f"last={ticker.last}")
-                    logger.info(f"📊 {symbol}: Market data: {', '.join(attrs) if attrs else 'None'}")
-                elif attempt == 30:
-                    logger.info(f"📊 {symbol}: Still waiting for Greeks... (3s)")
+                # Log progress (less verbose)
+                if attempt == 20:
+                    logger.info(f"📊 {symbol}: Waiting for Greeks... (2s)")
             
             # Timeout
-            logger.warning(f"⏰ {symbol}: No Greeks received after 5s")
+            logger.warning(f"⏰ {symbol}: No Greeks received after 3s")
             return None
             
         finally:
@@ -4034,11 +4047,11 @@ class TechnicalRecoveryManager:
                 # Wait before reconnecting
                 time.sleep(5)
                 
-                # Attempt reconnection
+                # Attempt reconnection with unique client ID
                 self.monitor.ib.connect(
                     host=endpoint['host'],
                     port=endpoint['port'],
-                    clientId=1
+                    clientId=config['ibkr']['client_id']  # Use configured client ID
                 )
                 
                 # Check if connection successful
@@ -4071,11 +4084,11 @@ class TechnicalRecoveryManager:
             if self.monitor.ib.isConnected():
                 self.monitor.ib.disconnect()
             
-            # Connect to new endpoint
+            # Connect to new endpoint with unique client ID
             self.monitor.ib.connect(
                 host=endpoint['host'],
                 port=endpoint['port'],
-                clientId=1
+                clientId=config['ibkr']['client_id']  # Use configured client ID
             )
             
             # Check if connection successful
@@ -7014,7 +7027,9 @@ config = {
     'ibkr': {
         'host': os.getenv('IBKR_HOST', '127.0.0.1'),
         'port': int(os.getenv('IBKR_PORT', '7496')),  # Live trading port
-        'client_id': int(os.getenv('IBKR_CLIENT_ID', '1'))
+        'client_id': int(os.getenv('IBKR_CLIENT_ID', '1')),
+        'scanner_client_id': int(os.getenv('IBKR_SCANNER_CLIENT_ID', '2')),
+        'executor_client_id': int(os.getenv('IBKR_EXECUTOR_CLIENT_ID', '3'))
     },
     
     'account': {
@@ -7134,8 +7149,28 @@ except Exception as e:
     print("📊 Dashboard will start in offline mode - some features will be limited")
     print("💡 To enable full functionality, start IBKR TWS or IB Gateway")
 
+# Initialize scanner and executor with separate IBKR connections using unique client IDs
 scanner = WheelScanner(config['symbols'], monitor)
+try:
+    scanner.ib.connect(
+        host=config['ibkr']['host'],
+        port=config['ibkr']['port'],
+        clientId=config['ibkr']['scanner_client_id']
+    )
+    print(f"✅ Scanner connected to IBKR with client ID {config['ibkr']['scanner_client_id']}")
+except Exception as e:
+    print(f"⚠️  Scanner IBKR connection failed: {e}")
+
 executor = TradeExecutor(monitor)
+try:
+    executor.ib.connect(
+        host=config['ibkr']['host'],
+        port=config['ibkr']['port'],
+        clientId=config['ibkr']['executor_client_id']
+    )
+    print(f"✅ Executor connected to IBKR with client ID {config['ibkr']['executor_client_id']}")
+except Exception as e:
+    print(f"⚠️  Executor IBKR connection failed: {e}")
 alert_manager = EnhancedAlertManager(config)
 tracker = PerformanceTracker()
 monitor.alert_manager = alert_manager
