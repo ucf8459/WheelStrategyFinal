@@ -91,142 +91,62 @@ import concurrent.futures
 import threading
 import queue as Queue
 
-class AsyncGreeksWorker:
-    """
-    Background asyncio worker to handle Greeks requests
-    Solves the Flask thread + ib_insync event loop incompatibility
-    """
-    def __init__(self):
-        self.request_queue = Queue.Queue()
-        self.response_futures = {}
-        self.worker_thread = None
-        self.loop = None
-        self.ib_connection = None
-        self.running = False
-        
-    def start(self, ib_connection):
-        """Start the background asyncio worker"""
-        self.ib_connection = ib_connection
-        self.running = True
-        self.worker_thread = threading.Thread(target=self._run_worker, daemon=True)
-        self.worker_thread.start()
-        logging.info("🚀 AsyncGreeksWorker started")
-        
-    def stop(self):
-        """Stop the background worker"""
-        self.running = False
-        if self.worker_thread:
-            self.worker_thread.join(timeout=5)
-            
-    def _run_worker(self):
-        """Background thread that runs the asyncio event loop"""
-        try:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self.loop.run_until_complete(self._process_requests())
-        except Exception as e:
-            logging.error(f"❌ AsyncGreeksWorker failed: {e}")
-        finally:
-            if self.loop:
-                self.loop.close()
-                
-    async def _process_requests(self):
-        """Process Greeks requests in the asyncio loop"""
-        while self.running:
-            try:
-                # Check for new requests (non-blocking)
-                try:
-                    request_id, contract, response_future = self.request_queue.get_nowait()
-                    # Process the Greeks request asynchronously
-                    delta = await self._get_delta_async(contract)
-                    response_future.set_result(delta)
-                except Queue.Empty:
-                    await asyncio.sleep(0.1)  # Brief pause when no requests
-                    
-            except Exception as e:
-                logging.error(f"❌ Greeks worker error: {e}")
-                await asyncio.sleep(1)
-                
-    async def _get_delta_async(self, contract):
-        """Async Greeks fetching using proper ib_insync methods"""
-        try:
-            symbol = contract.symbol
-            
-            # Use asyncio-compatible ib_insync methods
-            ticker = self.ib_connection.reqMktData(contract, "10,11,12,13", False, False)
-            
-            # Wait for Greeks data with async sleep
-            for attempt in range(30):  # 3 seconds max
-                await asyncio.sleep(0.1)
-                
-                # Check for Greeks in various fields
-                if hasattr(ticker, 'optionComputation') and ticker.optionComputation:
-                    delta = ticker.optionComputation.delta
-                    if delta is not None and not math.isnan(delta):
-                        self.ib_connection.cancelMktData(contract)
-                        logging.info(f"✅ {symbol}: ASYNC delta {float(delta):.3f}")
-                        return float(delta)
-                        
-                if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks:
-                    delta = ticker.modelGreeks.delta  
-                    if delta is not None and not math.isnan(delta):
-                        self.ib_connection.cancelMktData(contract)
-                        logging.info(f"✅ {symbol}: ASYNC delta {float(delta):.3f} (modelGreeks)")
-                        return float(delta)
-            
-            # Cleanup on timeout
-            self.ib_connection.cancelMktData(contract)
-            logging.warning(f"⏰ {symbol}: No async Greeks after 3s")
-            return None
-            
-        except Exception as e:
-            logging.error(f"❌ {contract.symbol}: Async Greeks failed: {e}")
-            return None
-    
-    def get_delta_sync(self, contract, timeout=5):
-        """Synchronous interface for Flask threads"""
-        if not self.running:
-            logging.warning("AsyncGreeksWorker not running")
-            return None
-            
-        # Create a future for the response
-        response_future = concurrent.futures.Future()
-        request_id = f"{contract.symbol}_{threading.get_ident()}"
-        
-        # Queue the request
-        self.request_queue.put((request_id, contract, response_future))
-        
-        # Wait for the result
-        try:
-            return response_future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            logging.warning(f"⏰ Greeks request timeout for {contract.symbol}")
-            return None
+# REMOVED: AsyncGreeksWorker class - now using shared connection architecture
 
-# Global Greeks worker instance
-_greeks_worker = None
+# SINGLE CONNECTION ARCHITECTURE: All components share monitor.ib connection
 
 def _get_delta_from_ibkr(ib_connection, contract, logger):
     """
-    Get live delta using the async worker (Flask thread compatible)
+    Get live delta using the SHARED connection (single connection architecture)
+    FIXED: No separate connections - use monitor.ib for all Greeks requests
     """
-    global _greeks_worker
-    
     try:
-        # Initialize worker on first use
-        if _greeks_worker is None:
-            logger.info(f"🚀 Initializing AsyncGreeksWorker for {contract.symbol}")
-            _greeks_worker = AsyncGreeksWorker()
-            _greeks_worker.start(ib_connection)
+        symbol = contract.symbol
+        logger.info(f"📞 Requesting delta for {symbol} via shared connection")
         
-        # Use the async worker
-        logger.info(f"📞 Requesting delta for {contract.symbol} via async worker")
-        result = _greeks_worker.get_delta_sync(contract)
-        logger.info(f"📊 Async worker returned: {result} for {contract.symbol}")
-        return result
+        # Use shared connection directly - no async worker needed
+        # Request market data with proper tick types for Greeks
+        ticker = ib_connection.reqMktData(contract, "10,11,12,13", False, False)
+        
+        # Wait for Greeks data with shorter timeout (shared connection is more responsive)
+        max_attempts = 20  # 2 seconds total
+        for attempt in range(max_attempts):
+            ib_connection.sleep(0.1)  # Use ib_insync's sleep method
+            
+            # Check for Model Option Computation (highest priority)
+            if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
+                delta = ticker.modelGreeks.delta
+                if not math.isnan(delta):
+                    ib_connection.cancelMktData(contract)
+                    delta_value = float(delta)
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via modelGreeks")
+                    return delta_value
+            
+            # Check optionComputation data
+            if hasattr(ticker, 'optionComputation') and ticker.optionComputation and ticker.optionComputation.delta is not None:
+                delta = ticker.optionComputation.delta
+                if not math.isnan(delta):
+                    ib_connection.cancelMktData(contract)
+                    delta_value = float(delta)
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via optionComputation")
+                    return delta_value
+                    
+            # Check bid/ask Greeks as backup
+            if hasattr(ticker, 'bidGreeks') and ticker.bidGreeks and ticker.bidGreeks.delta is not None:
+                delta = ticker.bidGreeks.delta
+                if not math.isnan(delta):
+                    ib_connection.cancelMktData(contract)
+                    delta_value = float(delta)
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via bidGreeks")
+                    return delta_value
+        
+        # Timeout - cleanup and return None
+        ib_connection.cancelMktData(contract)
+        logger.warning(f"⏰ {symbol}: No Greeks after 2s (shared connection)")
+        return None
         
     except Exception as e:
-        logger.error(f"❌ Async worker failed for {contract.symbol}: {e}")
+        logger.error(f"❌ {contract.symbol}: Shared connection Greeks failed: {e}")
         return None
 
 # -------------------------------------------------------------
@@ -7220,28 +7140,16 @@ except Exception as e:
     print("📊 Dashboard will start in offline mode - some features will be limited")
     print("💡 To enable full functionality, start IBKR TWS or IB Gateway")
 
-# Initialize scanner and executor with separate IBKR connections using unique client IDs
+# Use SHARED monitor connection for all components (avoids multiple connection conflicts)
 scanner = WheelScanner(config['symbols'], monitor)
-try:
-    scanner.ib.connect(
-        host=config['ibkr']['host'],
-        port=config['ibkr']['port'],
-        clientId=config['ibkr']['scanner_client_id']
-    )
-    print(f"✅ Scanner connected to IBKR with client ID {config['ibkr']['scanner_client_id']}")
-except Exception as e:
-    print(f"⚠️  Scanner IBKR connection failed: {e}")
+# Scanner shares monitor.ib connection - no separate connection needed
+scanner.ib = monitor.ib  # Share the connection
+print(f"✅ Scanner using shared monitor connection (client ID {config['ibkr']['client_id']})")
 
 executor = TradeExecutor(monitor)
-try:
-    executor.ib.connect(
-        host=config['ibkr']['host'],
-        port=config['ibkr']['port'],
-        clientId=config['ibkr']['executor_client_id']
-    )
-    print(f"✅ Executor connected to IBKR with client ID {config['ibkr']['executor_client_id']}")
-except Exception as e:
-    print(f"⚠️  Executor IBKR connection failed: {e}")
+# Executor shares monitor.ib connection - no separate connection needed  
+executor.ib = monitor.ib  # Share the connection
+print(f"✅ Executor using shared monitor connection (client ID {config['ibkr']['client_id']})")
 alert_manager = EnhancedAlertManager(config)
 tracker = PerformanceTracker()
 monitor.alert_manager = alert_manager
