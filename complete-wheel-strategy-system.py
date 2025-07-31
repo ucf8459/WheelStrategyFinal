@@ -82,80 +82,151 @@ class GreeksCallbackHandler:
 # Global Greeks handler instance
 _greeks_handler = GreeksCallbackHandler()
 
-# API Pacing Protection
-_last_greeks_request = {}
-_greeks_request_delay = 0.5  # 500ms between requests to prevent rate limits
+# -------------------------------------------------------------
+# ASYNC GREEKS WORKER - Solves Flask threading incompatibility  
+# -------------------------------------------------------------
+
+import asyncio
+import concurrent.futures
+import threading
+import queue as Queue
+
+class AsyncGreeksWorker:
+    """
+    Background asyncio worker to handle Greeks requests
+    Solves the Flask thread + ib_insync event loop incompatibility
+    """
+    def __init__(self):
+        self.request_queue = Queue.Queue()
+        self.response_futures = {}
+        self.worker_thread = None
+        self.loop = None
+        self.ib_connection = None
+        self.running = False
+        
+    def start(self, ib_connection):
+        """Start the background asyncio worker"""
+        self.ib_connection = ib_connection
+        self.running = True
+        self.worker_thread = threading.Thread(target=self._run_worker, daemon=True)
+        self.worker_thread.start()
+        logging.info("🚀 AsyncGreeksWorker started")
+        
+    def stop(self):
+        """Stop the background worker"""
+        self.running = False
+        if self.worker_thread:
+            self.worker_thread.join(timeout=5)
+            
+    def _run_worker(self):
+        """Background thread that runs the asyncio event loop"""
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self._process_requests())
+        except Exception as e:
+            logging.error(f"❌ AsyncGreeksWorker failed: {e}")
+        finally:
+            if self.loop:
+                self.loop.close()
+                
+    async def _process_requests(self):
+        """Process Greeks requests in the asyncio loop"""
+        while self.running:
+            try:
+                # Check for new requests (non-blocking)
+                try:
+                    request_id, contract, response_future = self.request_queue.get_nowait()
+                    # Process the Greeks request asynchronously
+                    delta = await self._get_delta_async(contract)
+                    response_future.set_result(delta)
+                except Queue.Empty:
+                    await asyncio.sleep(0.1)  # Brief pause when no requests
+                    
+            except Exception as e:
+                logging.error(f"❌ Greeks worker error: {e}")
+                await asyncio.sleep(1)
+                
+    async def _get_delta_async(self, contract):
+        """Async Greeks fetching using proper ib_insync methods"""
+        try:
+            symbol = contract.symbol
+            
+            # Use asyncio-compatible ib_insync methods
+            ticker = self.ib_connection.reqMktData(contract, "10,11,12,13", False, False)
+            
+            # Wait for Greeks data with async sleep
+            for attempt in range(30):  # 3 seconds max
+                await asyncio.sleep(0.1)
+                
+                # Check for Greeks in various fields
+                if hasattr(ticker, 'optionComputation') and ticker.optionComputation:
+                    delta = ticker.optionComputation.delta
+                    if delta is not None and not math.isnan(delta):
+                        self.ib_connection.cancelMktData(contract)
+                        logging.info(f"✅ {symbol}: ASYNC delta {float(delta):.3f}")
+                        return float(delta)
+                        
+                if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks:
+                    delta = ticker.modelGreeks.delta  
+                    if delta is not None and not math.isnan(delta):
+                        self.ib_connection.cancelMktData(contract)
+                        logging.info(f"✅ {symbol}: ASYNC delta {float(delta):.3f} (modelGreeks)")
+                        return float(delta)
+            
+            # Cleanup on timeout
+            self.ib_connection.cancelMktData(contract)
+            logging.warning(f"⏰ {symbol}: No async Greeks after 3s")
+            return None
+            
+        except Exception as e:
+            logging.error(f"❌ {contract.symbol}: Async Greeks failed: {e}")
+            return None
+    
+    def get_delta_sync(self, contract, timeout=5):
+        """Synchronous interface for Flask threads"""
+        if not self.running:
+            logging.warning("AsyncGreeksWorker not running")
+            return None
+            
+        # Create a future for the response
+        response_future = concurrent.futures.Future()
+        request_id = f"{contract.symbol}_{threading.get_ident()}"
+        
+        # Queue the request
+        self.request_queue.put((request_id, contract, response_future))
+        
+        # Wait for the result
+        try:
+            return response_future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            logging.warning(f"⏰ Greeks request timeout for {contract.symbol}")
+            return None
+
+# Global Greeks worker instance
+_greeks_worker = None
 
 def _get_delta_from_ibkr(ib_connection, contract, logger):
     """
-    Get live delta from IBKR using ib_insync framework with tickOptionComputation
-    Uses all Greek tick types: #10 (Bid), #11 (Ask), #12 (Last), #13 (Model)
-    Leverages ib_insync's built-in event handling system
-    INCLUDES API PACING PROTECTION to prevent rate limit violations
+    Get live delta using the async worker (Flask thread compatible)
     """
-    import time
-    global _last_greeks_request, _greeks_request_delay
+    global _greeks_worker
     
     try:
-        symbol = contract.symbol
+        # Initialize worker on first use
+        if _greeks_worker is None:
+            logger.info(f"🚀 Initializing AsyncGreeksWorker for {contract.symbol}")
+            _greeks_worker = AsyncGreeksWorker()
+            _greeks_worker.start(ib_connection)
         
-        # API PACING PROTECTION: Ensure minimum delay between requests
-        now = time.time()
-        if symbol in _last_greeks_request:
-            time_since_last = now - _last_greeks_request[symbol]
-            if time_since_last < _greeks_request_delay:
-                sleep_time = _greeks_request_delay - time_since_last
-                logger.info(f"🕐 {symbol}: API pacing delay {sleep_time:.2f}s")
-                time.sleep(sleep_time)
-        
-        _last_greeks_request[symbol] = time.time()
-        
-        delta_received = None
-        
-        # Event handler for tickOptionComputation
-        def on_option_computation(ticker, field, computation):
-            nonlocal delta_received
-            if ticker.contract.symbol == symbol and computation and computation.delta is not None:
-                delta_received = float(computation.delta)
-                logger.info(f"📊 {symbol}: Received Greeks: delta={delta_received:.4f}, field={field}")
-        
-        # Request market data with all Greeks tick types as you specified
-        # Tick types: 10=BidOptionComp, 11=AskOptionComp, 12=LastOptionComp, 13=ModelOptionComp
-        ticker = ib_connection.reqMktData(contract, "10,11,12,13", False, False)
-        
-        # Connect the event handler
-        ticker.updateEvent += on_option_computation
-        
-        try:
-            # Wait for Greeks data to arrive (reduced timeout for better pacing)
-            max_attempts = 30  # 3 seconds total (30 * 0.1s) - shorter for better throughput
-            for attempt in range(max_attempts):
-                util.sleep(0.1)  # 100ms intervals
-                
-                # Check if we received delta
-                if delta_received is not None:
-                    logger.info(f"✅ {symbol}: LIVE IBKR delta {delta_received:.3f} via ib_insync event")
-                    return delta_received
-                
-                # Force an update to trigger events (less frequently)
-                if attempt % 10 == 0:
-                    ib_connection.waitOnUpdate(timeout=0.01)
-                
-                # Log progress (less verbose)
-                if attempt == 20:
-                    logger.info(f"📊 {symbol}: Waiting for Greeks... (2s)")
-            
-            # Timeout
-            logger.warning(f"⏰ {symbol}: No Greeks received after 3s")
-            return None
-            
-        finally:
-            # Always clean up
-            ticker.updateEvent -= on_option_computation
-            ib_connection.cancelMktData(contract)
+        # Use the async worker
+        logger.info(f"📞 Requesting delta for {contract.symbol} via async worker")
+        result = _greeks_worker.get_delta_sync(contract)
+        logger.info(f"📊 Async worker returned: {result} for {contract.symbol}")
+        return result
         
     except Exception as e:
-        logger.error(f"❌ {contract.symbol}: IBKR Greeks via ib_insync failed: {e}")
+        logger.error(f"❌ Async worker failed for {contract.symbol}: {e}")
         return None
 
 # -------------------------------------------------------------
