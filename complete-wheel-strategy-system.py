@@ -27,6 +27,63 @@ import glob
 from dotenv import load_dotenv
 import sys
 import traceback
+import concurrent.futures
+import queue
+import math
+
+# -------------------------------------------------------------
+# IBKR Greeks via tickOptionComputation (CORRECT METHOD)
+# -------------------------------------------------------------
+
+def _get_delta_from_ibkr(ib_connection, contract, logger):
+    """
+    Get live delta from IBKR using proper tickOptionComputation callback
+    Uses tick type #13 (Model Option Computation) as recommended by IBKR
+    """
+    try:
+        # First, qualify the contract to ensure IBKR recognizes it
+        qualified_contracts = ib_connection.qualifyContracts(contract)
+        if not qualified_contracts:
+            logger.error(f"❌ {contract.symbol}: Contract not recognized by IBKR")
+            return None
+            
+        qualified_contract = qualified_contracts[0]
+        
+        # Request market data with Model Option Computation (tick type #13)
+        # This is the correct way to get Greeks according to IBKR documentation
+        ticker = ib_connection.reqMktData(qualified_contract, "13", False, False)
+        
+        # Wait for optionComputation data (where Greeks are delivered)
+        max_attempts = 20  # 2 seconds total (20 * 0.1s)
+        for attempt in range(max_attempts):
+            util.sleep(0.1)  # 100ms intervals
+            
+            # Check if we have optionComputation data with delta
+            if hasattr(ticker, 'optionComputation') and ticker.optionComputation:
+                delta = ticker.optionComputation.delta
+                if delta is not None and not math.isnan(delta):
+                    delta_value = float(delta)
+                    logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {delta_value:.3f} via tick #13")
+                    ib_connection.cancelMktData(qualified_contract)
+                    return delta_value
+            
+            # Also check modelGreeks as backup
+            if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
+                delta = ticker.modelGreeks.delta
+                if not math.isnan(delta):
+                    delta_value = float(delta)
+                    logger.info(f"✅ {contract.symbol}: LIVE IBKR delta {delta_value:.3f} via modelGreeks")
+                    ib_connection.cancelMktData(qualified_contract)
+                    return delta_value
+        
+        # Timeout - clean up
+        ib_connection.cancelMktData(qualified_contract)
+        logger.warning(f"⏰ {contract.symbol}: No Greeks data received (may need market data subscription)")
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ {contract.symbol}: IBKR Greeks request failed: {e}")
+        return None
 
 # -------------------------------------------------------------
 # Core Data Structures
@@ -5487,27 +5544,8 @@ class WheelDashboard:
                             estimated_delta = float(item.modelGreeks.delta)
                             logger.info(f"✅ {contract.symbol}: Portfolio item has delta {estimated_delta:.3f}")
                         else:
-                            # Fallback: Try to get LIVE delta from IBKR Greeks using reqMktData
-                            try:
-                                # Request live market data WITHOUT specific tick types (like other working calls)
-                                ticker = self.monitor.ib.reqMktData(contract)
-                                util.sleep(1)  # Use util.sleep like other working examples
-                                
-                                if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and hasattr(ticker.modelGreeks, 'delta') and ticker.modelGreeks.delta is not None:
-                                    # SUCCESS: Got live IBKR delta
-                                    estimated_delta = float(ticker.modelGreeks.delta)
-                                    logger.info(f"✅ {contract.symbol}: reqMktData delta {estimated_delta:.3f}")
-                                    self.monitor.ib.cancelMktData(contract)
-                                
-                                else:
-                                    # FAILURE: No live Greeks available
-                                    logger.error(f"❌ {contract.symbol}: LIVE GREEKS FAILED - NO DELTA AVAILABLE")
-                                    self.monitor.ib.cancelMktData(contract)
-                                    estimated_delta = None
-                            except Exception as e:
-                                logger.error(f"❌ LIVE DELTA REQUEST FAILED for {contract.symbol}: {e}")
-                                logger.error(f"❌ NO FALLBACK - MUST FIX LIVE GREEKS")
-                                estimated_delta = None
+                            # Try SYNCHRONOUS Greeks request using threading approach (same as Flask)
+                            estimated_delta = _get_delta_from_ibkr(self.monitor.ib, contract, logger)
                     elif hasattr(contract, 'right') and contract.right == '0':  # Stock
                         estimated_delta = None  # No delta for stocks
                     
@@ -6100,27 +6138,8 @@ def get_positions():
                                     estimated_delta = float(item.modelGreeks.delta)
                                     logger.info(f"✅ {contract.symbol}: Portfolio item has delta {estimated_delta:.3f}")
                                 else:
-                                    # Fallback: Try to get LIVE delta from IBKR Greeks using reqMktData
-                                    try:
-                                        # Request live market data WITHOUT specific tick types (like other working calls)
-                                        ticker = dashboard.monitor.ib.reqMktData(contract)
-                                        util.sleep(1)  # Use util.sleep like other working examples
-                                        
-                                        if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and hasattr(ticker.modelGreeks, 'delta') and ticker.modelGreeks.delta is not None:
-                                            # SUCCESS: Got live IBKR delta
-                                            estimated_delta = float(ticker.modelGreeks.delta)
-                                            logger.info(f"✅ {contract.symbol}: reqMktData delta {estimated_delta:.3f}")
-                                            dashboard.monitor.ib.cancelMktData(contract)
-                                        
-                                        else:
-                                            # FAILURE: No live Greeks available
-                                            logger.error(f"❌ {contract.symbol}: LIVE GREEKS FAILED - NO DELTA AVAILABLE")
-                                            dashboard.monitor.ib.cancelMktData(contract)
-                                            estimated_delta = None
-                                    except Exception as e:
-                                        logger.error(f"❌ LIVE DELTA REQUEST FAILED for {contract.symbol}: {e}")
-                                        logger.error(f"❌ NO FALLBACK - MUST FIX LIVE GREEKS")
-                                        estimated_delta = None
+                                    # Try SYNCHRONOUS Greeks request using threading approach
+                                    estimated_delta = _get_delta_from_ibkr(dashboard.monitor.ib, contract, logger)
                             elif hasattr(contract, 'right') and contract.right == '0':  # Stock
                                 estimated_delta = None  # No delta for stocks
                             
