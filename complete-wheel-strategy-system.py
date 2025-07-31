@@ -1750,52 +1750,8 @@ class WheelScanner:
         self.monitor = monitor
         self.sector_map = self._load_sector_map()
         
-        # Initialize separate connection for scanner with its own ID range
-        self.ib = IB()
-        
-        # Clean up any existing connection
-        if self.ib.isConnected():
-            logger.info("Disconnecting existing scanner connection...")
-            self.ib.disconnect()
-            time.sleep(1)  # Wait for connection to close
-        
-        min_id, max_id = monitor.client_id_ranges['scanner']
-        
-        # Try random client IDs
-        import random
-        tried_ids = set()
-        
-        while len(tried_ids) < (max_id - min_id + 1):
-            current_id = random.randint(min_id, max_id)
-            if current_id in tried_ids:
-                continue
-                
-            tried_ids.add(current_id)
-            
-            try:
-                logger.info(f"Attempting to connect scanner with client ID: {current_id}")
-                self.ib.connect(host=config['ibkr']['host'], 
-                              port=config['ibkr']['port'], 
-                              clientId=current_id)
-                logger.info(f"Successfully connected scanner to IBKR")
-                
-                # Store the connection
-                active_connections['scanner'] = self.ib
-                return
-            except Exception as e:
-                if "client id is already in use" in str(e).lower():
-                    logger.warning(f"Client ID {current_id} is in use, trying another one...")
-                    time.sleep(0.5)
-                else:
-                    logger.error(f"Scanner connection failed: {e}")
-                    # Don't raise the exception, just log it and continue without connection
-                    print(f"⚠️  Scanner connection failed: {e}")
-                    print("📊 Scanner will operate in offline mode")
-                    return
-                    
-        # If we get here, we couldn't connect
-        print("⚠️  Could not find available client ID for scanner")
-        print("📊 Scanner will operate in offline mode")
+        # SHARED CONNECTION: Will be assigned externally - no auto-connection
+        self.ib = None  # Will be set to monitor.ib
         
     def _load_sector_map(self) -> Dict:
         """Load sector classifications for symbols - TEMPORARILY DISABLED due to yfinance rate limits"""
@@ -2337,52 +2293,8 @@ class TradeExecutor:
         self.monitor = monitor
         self.logger = logging.getLogger(__name__)
         
-        # Initialize separate connection for executor with its own ID range
-        self.ib = IB()
-        
-        # Clean up any existing connection
-        if self.ib.isConnected():
-            logger.info("Disconnecting existing executor connection...")
-            self.ib.disconnect()
-            time.sleep(1)  # Wait for connection to close
-        
-        min_id, max_id = monitor.client_id_ranges['executor']
-        
-        # Try random client IDs
-        import random
-        tried_ids = set()
-        
-        while len(tried_ids) < (max_id - min_id + 1):
-            current_id = random.randint(min_id, max_id)
-            if current_id in tried_ids:
-                continue
-                
-            tried_ids.add(current_id)
-            
-            try:
-                logger.info(f"Attempting to connect executor with client ID: {current_id}")
-                self.ib.connect(host=config['ibkr']['host'], 
-                              port=config['ibkr']['port'], 
-                              clientId=current_id)
-                logger.info(f"Successfully connected executor to IBKR")
-                
-                # Store the connection
-                active_connections['executor'] = self.ib
-                return
-            except Exception as e:
-                if "client id is already in use" in str(e).lower():
-                    logger.warning(f"Client ID {current_id} is in use, trying another one...")
-                    time.sleep(0.5)
-                else:
-                    logger.error(f"Executor connection failed: {e}")
-                    # Don't raise the exception, just log it and continue without connection
-                    print(f"⚠️  Executor connection failed: {e}")
-                    print("📊 Executor will operate in offline mode")
-                    return
-                    
-        # If we get here, we couldn't connect
-        print("⚠️  Could not find available client ID for executor")
-        print("📊 Executor will operate in offline mode")
+        # SHARED CONNECTION: Will be assigned externally - no auto-connection
+        self.ib = None  # Will be set to monitor.ib
         
         # Connect monitor's BlackSwanProtocol to this executor
         self.monitor.black_swan_protocol.executor = self
