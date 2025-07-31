@@ -6063,11 +6063,11 @@ def get_positions():
                             # Get LIVE delta from IBKR - NO FALLBACKS ALLOWED
                             estimated_delta = None  # Must get live delta or None
                             if hasattr(contract, 'right') and contract.right != '0':  # Only for options
-                                # Try to get LIVE delta from IBKR Greeks ONLY
+                                # Try to get LIVE delta from IBKR Greeks using working pattern
                                 try:
-                                    # Request live market data for Greeks
-                                    ticker = dashboard.monitor.ib.reqMktData(contract, '106', False, False)
-                                    time.sleep(3)  # Wait longer for Greeks
+                                    # Request live market data WITHOUT specific tick types (like other working calls)
+                                    ticker = dashboard.monitor.ib.reqMktData(contract)
+                                    util.sleep(1)  # Use util.sleep like other working examples
                                     
                                     if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and hasattr(ticker.modelGreeks, 'delta') and ticker.modelGreeks.delta is not None:
                                         # SUCCESS: Got live IBKR delta
@@ -6098,9 +6098,9 @@ def get_positions():
                                     roll_recommendation = 'URGENT: Roll to next month (DTE < 7)'
                                 elif dte is not None and dte < 14:
                                     roll_recommendation = 'Consider rolling to next month (DTE < 14)'
-                                elif abs(estimated_delta) > 0.50:
+                                elif estimated_delta is not None and abs(estimated_delta) > 0.50:
                                     roll_recommendation = 'Consider rolling to lower delta (High risk)'
-                                elif abs(estimated_delta) > 0.30:
+                                elif estimated_delta is not None and abs(estimated_delta) > 0.30:
                                     roll_recommendation = 'Monitor delta - may need adjustment'
                                 
                                 # Generate close recommendations based on P&L
@@ -6474,7 +6474,7 @@ def _analyze_delta_creep(positions):
         # Get current positions with delta data
         current_deltas = []
         for pos in positions:
-            if pos.get('contract_type') == 'OPTION' and pos.get('delta'):
+            if pos.get('contract_type') == 'OPTION' and pos.get('delta') is not None:
                 current_deltas.append(abs(pos['delta']))
         
         if not current_deltas:
