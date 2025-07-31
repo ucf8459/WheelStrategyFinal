@@ -4838,28 +4838,11 @@ def get_opportunities():
             logger.error("❌ OPPORTUNITIES FAILED - NO SCANNER AVAILABLE")
             raise RuntimeError("Scanner not available - no real opportunities possible")
         
-        # Try to get opportunities with timeout protection
+        # Try to get opportunities (removed signal timeout - doesn't work in threads)
         try:
-            # Use a simple timeout approach - if scanner takes too long, return fallback
-            import signal
-            
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Opportunity scan timeout")
-            
-            # Set timeout for 5 seconds
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(5)
-            
-            try:
-                opportunities = dashboard.scanner.scan_opportunities()
-                signal.alarm(0)  # Cancel timeout
-            except TimeoutError:
-                logger.error("Opportunity scan timed out - HARD FAIL")
-                signal.alarm(0)  # Cancel timeout
-                raise RuntimeError("Opportunity scanner timeout - no fallback data")
-                
-        except (AttributeError, TimeoutError) as e:
-            logger.error(f"Scanner unavailable or timed out: {e}")
+            opportunities = dashboard.scanner.scan_opportunities()
+        except Exception as e:
+            logger.error(f"Scanner failed: {e}")
             raise RuntimeError(f"Scanner completely unavailable: {e}")
         
         # Ensure we have a list and limit to top 5
@@ -5669,45 +5652,10 @@ class WheelDashboard:
             logger.error(f"❌ Error in _get_delta_from_cache for {symbol}: {e}")
             return None
     
-    async def _calculate_position_delta(self, contract, contract_type, option_type, strike, position):
-        """Get delta from background service cache or fallback to estimate"""
-        try:
-            # For stocks, no delta calculation needed
-            if contract_type == 'STK':
-                return None
-            elif contract_type != 'OPT':
-                return 0.0
-            
-            # NO CACHE FALLBACK - ONLY LIVE IBKR DELTAS
-            logger.error(f"❌ {contract.symbol}: DELTA CACHE DISABLED - LIVE GREEKS REQUIRED")
-            return None  # No fallback allowed
-                
-        except Exception as e:
-            logger.error(f"Error in _calculate_position_delta for {contract.symbol}: {e}")
-            return 0.0
+    # REMOVED: _calculate_position_delta - function was broken and disabled
     
-    async def _calculate_estimated_delta(self, contract, strike):
-        """Calculate estimated delta using real stock prices from IBKR data"""
-        try:
-            # Get current stock price from IBKR data
-            stock_price = None
-            
-            # Try to get the actual stock price from IBKR positions
-            try:
-                # Get stock price from the stock position if it exists
-                stock_positions = [p for p in self.monitor.ib.positions() if p.contract.secType == 'STK' and p.contract.symbol == contract.symbol]
-                if stock_positions:
-                    # Use the stock's market price
-                    stock_price = stock_positions[0].contract.marketPrice
-                    logger.info(f"📊 Using real stock price for {contract.symbol}: ${stock_price:.2f}")
-                else:
-                    # Try to get from portfolio items
-                    portfolio_items = [p for p in self.monitor.ib.portfolio() if p.contract.secType == 'STK' and p.contract.symbol == contract.symbol]
-                    if portfolio_items:
-                        stock_price = portfolio_items[0].contract.marketPrice
-                        logger.info(f"📊 Using portfolio stock price for {contract.symbol}: ${stock_price:.2f}")
-            except Exception as e:
-                logger.warning(f"Could not get real stock price for {contract.symbol}: {e}")
+    # REMOVED: _calculate_estimated_delta - function was broken and no longer used
+        # Function body removed - was broken and unused
             
             # If we still don't have a stock price, try to estimate from option price
             if stock_price is None and hasattr(contract, 'marketPrice') and contract.marketPrice:
@@ -5789,9 +5737,7 @@ class WheelDashboard:
             logger.info(f"📊 {contract.symbol}: Estimated delta {delta:.3f} (price=${stock_price:.2f}, strike=${strike}, moneyness={moneyness:.3f}, DTE={dte}, type={contract.right})")
             return delta
                     
-        except Exception as e:
-            logger.error(f"Error calculating estimated delta for {contract.symbol}: {e}")
-            return 0.0
+        # Function removed - was broken and unused
     
 
 
@@ -6301,6 +6247,7 @@ def get_premium_tracking():
         daily_progress = (todays_premium / daily_premium_target * 100) if daily_premium_target > 0 else 0
         
         # Calculate days remaining in month
+        current_date = datetime.now()
         if current_date.month == 12:
             next_month = current_date.replace(year=current_date.year + 1, month=1, day=1)
         else:
