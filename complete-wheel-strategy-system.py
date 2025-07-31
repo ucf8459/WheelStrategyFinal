@@ -97,91 +97,104 @@ import queue as Queue
 _greeks_connection_pool = {}
 _greeks_port_counter = 8000  # Start from port 8000 for Greeks connections
 
-def _get_unique_greeks_connection(symbol, logger):
-    """Get a unique IB connection for Greeks requests using dedicated ports"""
-    global _greeks_connection_pool, _greeks_port_counter
-    
-    # Use symbol-specific connection to avoid conflicts
-    if symbol not in _greeks_connection_pool:
-        try:
-            # Create new IB connection with unique client ID and socket port
-            unique_ib = IB()
-            client_id = 100 + len(_greeks_connection_pool)  # Start from client ID 100
-            port = _greeks_port_counter + len(_greeks_connection_pool)
-            
-            # Connect with unique client ID
-            unique_ib.connect(
-                host='127.0.0.1',
-                port=7496,  # TWS port
-                clientId=client_id
-            )
-            
-            _greeks_connection_pool[symbol] = unique_ib
-            logger.info(f"✅ Created unique Greeks connection for {symbol} (client_id={client_id})")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to create unique connection for {symbol}: {e}")
+def _get_qualified_contract(ib_connection, contract, logger):
+    """Qualify contract properly before requesting market data"""
+    try:
+        # Ensure contract has all required fields
+        if not contract.symbol or not contract.secType:
+            logger.error(f"❌ Invalid contract: missing symbol or secType")
             return None
-    
-    return _greeks_connection_pool.get(symbol)
+            
+        # For options, ensure we have strike, right, and expiry
+        if contract.secType == 'OPT':
+            if not contract.strike or not contract.right or not contract.lastTradeDateOrContractMonth:
+                logger.error(f"❌ Invalid option contract: missing strike/right/expiry")
+                return None
+        
+        # Qualify the contract (this is CRITICAL for Greeks)
+        qualified_contracts = ib_connection.qualifyContracts(contract)
+        
+        if not qualified_contracts:
+            logger.error(f"❌ Contract qualification failed for {contract.symbol}")
+            return None
+            
+        qualified_contract = qualified_contracts[0]
+        logger.info(f"✅ Contract qualified: {qualified_contract.symbol} {qualified_contract.secType}")
+        return qualified_contract
+        
+    except Exception as e:
+        logger.error(f"❌ Contract qualification error: {e}")
+        return None
 
 def _get_delta_from_ibkr(ib_connection, contract, logger):
     """
-    Get live delta using UNIQUE socket connections per symbol
-    FIXED: Each symbol gets its own connection to avoid socket conflicts
+    Get live delta with PROPER contract qualification and synchronous approach
+    FIXED: No event loops - uses direct market data subscription
     """
     try:
         symbol = contract.symbol
-        logger.info(f"📞 Requesting delta for {symbol} via unique connection")
+        logger.info(f"📞 Requesting delta for {symbol} with contract qualification")
         
-        # Get unique connection for this symbol to avoid socket conflicts
-        unique_ib = _get_unique_greeks_connection(symbol, logger)
-        if not unique_ib:
-            logger.error(f"❌ {symbol}: Failed to get unique connection")
+        # Step 1: Qualify the contract (CRITICAL for Greeks)
+        qualified_contract = _get_qualified_contract(ib_connection, contract, logger)
+        if not qualified_contract:
+            logger.error(f"❌ {symbol}: Contract qualification failed")
             return None
-            
-        # Request market data with proper tick types for Greeks
-        ticker = unique_ib.reqMktData(contract, "10,11,12,13", False, False)
         
-        # Wait for Greeks data
-        max_attempts = 20  # 2 seconds total
+        # Step 2: Request market data for the QUALIFIED contract
+        # Use Model Option Computation (#13) as primary source
+        logger.info(f"📊 {symbol}: Requesting Greeks via tick types 10,11,12,13")
+        ticker = ib_connection.reqMktData(qualified_contract, "10,11,12,13", False, False)
+        
+        # Step 3: Wait for Greeks data with proper synchronous approach
+        max_attempts = 30  # 3 seconds total - Greeks need more time
         for attempt in range(max_attempts):
-            unique_ib.sleep(0.1)  # Use unique connection's sleep method
+            # Use util.sleep instead of ib.sleep to avoid event loop issues
+            import time
+            time.sleep(0.1)
             
-            # Check for Model Option Computation (highest priority)
-            if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
+            # Check Model Option Computation first (most robust per IBKR docs)
+            if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks:
                 delta = ticker.modelGreeks.delta
-                if not math.isnan(delta):
-                    unique_ib.cancelMktData(contract)
+                if delta is not None and not math.isnan(delta):
+                    ib_connection.cancelMktData(qualified_contract)
                     delta_value = float(delta)
-                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via modelGreeks (unique connection)")
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via modelGreeks")
                     return delta_value
             
-            # Check optionComputation data
-            if hasattr(ticker, 'optionComputation') and ticker.optionComputation and ticker.optionComputation.delta is not None:
+            # Check tickOptionComputation (as you mentioned in callback)
+            if hasattr(ticker, 'optionComputation') and ticker.optionComputation:
                 delta = ticker.optionComputation.delta
-                if not math.isnan(delta):
-                    unique_ib.cancelMktData(contract)
+                if delta is not None and not math.isnan(delta):
+                    ib_connection.cancelMktData(qualified_contract)
                     delta_value = float(delta)
-                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via optionComputation (unique connection)")
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via optionComputation")
+                    return delta_value
+            
+            # Check bid/ask Greeks as backup
+            if hasattr(ticker, 'bidGreeks') and ticker.bidGreeks:
+                delta = ticker.bidGreeks.delta
+                if delta is not None and not math.isnan(delta):
+                    ib_connection.cancelMktData(qualified_contract)
+                    delta_value = float(delta)
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via bidGreeks")
                     return delta_value
                     
-            # Check bid/ask Greeks as backup
-            if hasattr(ticker, 'bidGreeks') and ticker.bidGreeks and ticker.bidGreeks.delta is not None:
-                delta = ticker.bidGreeks.delta
-                if not math.isnan(delta):
-                    unique_ib.cancelMktData(contract)
+            if hasattr(ticker, 'askGreeks') and ticker.askGreeks:
+                delta = ticker.askGreeks.delta
+                if delta is not None and not math.isnan(delta):
+                    ib_connection.cancelMktData(qualified_contract)
                     delta_value = float(delta)
-                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via bidGreeks (unique connection)")
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via askGreeks")
                     return delta_value
         
         # Timeout - cleanup and return None
-        unique_ib.cancelMktData(contract)
-        logger.warning(f"⏰ {symbol}: No Greeks after 2s (unique connection)")
+        ib_connection.cancelMktData(qualified_contract)
+        logger.warning(f"⏰ {symbol}: No Greeks after 3s with qualified contract")
         return None
         
     except Exception as e:
-        logger.error(f"❌ {contract.symbol}: Unique connection Greeks failed: {e}")
+        logger.error(f"❌ {contract.symbol}: Qualified Greeks request failed: {e}")
         return None
 
 # -------------------------------------------------------------
