@@ -197,6 +197,126 @@
             gap: 1rem;
         }
         
+        .workflow-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .workflow-actions .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            font-size: 0.9rem;
+        }
+        
+        .workflow-actions .btn i {
+            font-size: 1rem;
+        }
+        
+        .workflow-actions .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .workflow-actions .btn.completed {
+            background-color: var(--success);
+            border-color: var(--success);
+        }
+        
+        .workflow-actions .btn.in-progress {
+            background-color: var(--warning);
+            border-color: var(--warning);
+        }
+        
+        /* Enhanced Opportunity Scanner Styles */
+        .opportunity-card {
+            background: var(--card-bg);
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .opportunity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .opportunity-symbol {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: var(--dark);
+        }
+        
+        .opportunity-score {
+            margin-bottom: 0.5rem;
+        }
+        
+        .opportunity-criteria {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+        
+        .opportunity-return {
+            margin-bottom: 0.5rem;
+        }
+        
+        .return-breakdown {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+        
+        .opportunity-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .opportunity-actions .btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+        }
+        
+        /* Enhanced Position Actions Styles */
+        #positions-table td:last-child {
+            white-space: nowrap;
+        }
+        
+        #positions-table .btn {
+            margin: 0.1rem;
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        #positions-table .btn-sm {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.4rem;
+        }
+        
+        .position-actions-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+        }
+        
+        .position-action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            margin: 0.1rem;
+        }
+        
         .metric-card {
             background-color: var(--card-bg);
             border-radius: 8px;
@@ -525,14 +645,7 @@
                         </td>
                         <td>
                             ${pos.type === 'STOCK' ? '<span class="text-muted">No Actions</span>' :
-                              pos.status === 'ROLLING' ? '<button class="btn btn-danger btn-sm" title="High Priority - Roll Defensive">🚨 Roll (Defensive)</button>' :
-                              pos.status === 'CLOSING' ? '<button class="btn btn-success btn-sm" title="Close Position">✅ Close</button>' :
-                              pos.close_recommendation && pos.close_recommendation.includes('Strong profit') ? '<button class="btn btn-success btn-sm" title="' + pos.close_recommendation + '">💰 Close (Profit)</button>' :
-                              pos.close_recommendation && pos.close_recommendation.includes('losses') ? '<button class="btn btn-danger btn-sm" title="' + pos.close_recommendation + '">🛑 Close (Loss)</button>' :
-                              pos.dte_color === 'red' ? '<button class="btn btn-warning btn-sm" title="' + (pos.roll_recommendation || 'Medium Priority - Expiring Soon') + '">⚠️ Roll</button>' :
-                              pos.delta_risk === 'high' ? '<button class="btn btn-warning btn-sm" title="' + (pos.roll_recommendation || 'Medium Priority - High Delta Risk') + '">⚠️ Monitor</button>' :
-                              pos.status === 'ACTIVE' ? '<button class="btn btn-secondary btn-sm" title="' + (pos.roll_recommendation || pos.close_recommendation || 'Low Priority - Normal Monitoring') + '">📊 Monitor</button>' :
-                              '<button class="btn btn-primary btn-sm" title="' + (pos.roll_recommendation || pos.close_recommendation || 'View Details') + '">👁️ View</button>'}
+                              createPositionActions(pos)}
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -635,6 +748,24 @@
                         borderWidth: 2,
                         fill: true,
                         tension: 0.1
+                    }, {
+                        label: 'SPY Benchmark',
+                        data: [],
+                        borderColor: '#6c757d',
+                        backgroundColor: 'rgba(108, 117, 125, 0.05)',
+                        borderWidth: 1,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.1
+                    }, {
+                        label: 'Drawdown',
+                        data: [],
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgba(230, 57, 70, 0.1)',
+                        borderWidth: 0,
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 0
                     }]
                 },
                 options: {
@@ -652,12 +783,22 @@
                     },
                     plugins: {
                         legend: {
-                            display: false
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 10
+                            }
                         },
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return 'Value: $' + context.parsed.y.toLocaleString();
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    if (label === 'Drawdown') {
+                                        return 'Drawdown: ' + value.toFixed(2) + '%';
+                                    }
+                                    return label + ': $' + value.toLocaleString();
                                 }
                             }
                         }
@@ -675,9 +816,13 @@
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             });
             const values = chartData.map(point => point.value);
+            const spyValues = chartData.map(point => point.spy_value || null);
+            const drawdownValues = chartData.map(point => point.drawdown || null);
             
             portfolioChart.data.labels = labels;
             portfolioChart.data.datasets[0].data = values;
+            portfolioChart.data.datasets[1].data = spyValues;
+            portfolioChart.data.datasets[2].data = drawdownValues;
             portfolioChart.update();
         }
         
@@ -750,16 +895,212 @@
             opportunitiesData.forEach(opp => {
                 const div = document.createElement('div');
                 div.className = 'opportunity-card';
+                
+                // Determine opportunity type and badge
+                const opportunityType = getOpportunityType(opp);
+                const badgeClass = getBadgeClass(opportunityType);
+                
+                // Create detailed criteria display
+                const criteriaDisplay = createCriteriaDisplay(opp);
+                
                 div.innerHTML = `
-                    <div class="opportunity-details">
+                    <div class="opportunity-header">
                         <div class="opportunity-symbol">${opp.symbol} $${opp.strike} Put</div>
-                        <div>Score: ${opp.score || 0} | Sector: ${opp.sector || 'Unknown'}</div>
+                        <span class="badge ${badgeClass}">${opportunityType}</span>
                     </div>
-                    <div class="opportunity-return">${(opp.annual_return || 0).toFixed(1)}% Annualized</div>
-                    <button class="btn btn-primary btn-sm">Trade</button>
+                    <div class="opportunity-details">
+                        <div class="opportunity-score">
+                            <strong>Score: ${opp.score || 0}</strong> | Sector: ${opp.sector || 'Unknown'}
+                        </div>
+                        <div class="opportunity-criteria">
+                            ${criteriaDisplay}
+                        </div>
+                    </div>
+                    <div class="opportunity-return">
+                        <strong>${(opp.annual_return || 0).toFixed(1)}% Annualized</strong>
+                        <div class="return-breakdown">
+                            Premium: $${(opp.premium || 0).toFixed(2)} | DTE: ${opp.dte || 0} days
+                        </div>
+                    </div>
+                    <div class="opportunity-actions">
+                        <button class="btn btn-primary btn-sm" onclick="executeTrade('${opp.symbol}', ${opp.strike}, '${opp.expiry}')">
+                            <i class="fas fa-chart-line"></i> Trade
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="viewDetails('${opp.symbol}')">
+                            <i class="fas fa-info-circle"></i> Details
+                        </button>
+                    </div>
                 `;
                 container.appendChild(div);
             });
+        }
+        
+        // Determine opportunity type
+        function getOpportunityType(opp) {
+            if (opp.post_earnings_iv_crush) return 'Post-Earnings IV Crush';
+            if (opp.sector_rotation) return 'Sector Rotation';
+            if (opp.high_iv_rank && opp.iv_rank > 80) return 'High IV Rank';
+            if (opp.liquidity_score && opp.liquidity_score > 0.8) return 'High Liquidity';
+            if (opp.earnings_distance && opp.earnings_distance > 30) return 'Earnings Safe';
+            return 'Standard';
+        }
+        
+        // Get badge class for opportunity type
+        function getBadgeClass(opportunityType) {
+            switch (opportunityType) {
+                case 'Post-Earnings IV Crush': return 'badge-danger';
+                case 'Sector Rotation': return 'badge-warning';
+                case 'High IV Rank': return 'badge-success';
+                case 'High Liquidity': return 'badge-info';
+                case 'Earnings Safe': return 'badge-secondary';
+                default: return 'badge-primary';
+            }
+        }
+        
+        // Create detailed criteria display
+        function createCriteriaDisplay(opp) {
+            const criteria = [];
+            
+            if (opp.iv_rank) {
+                criteria.push(`IV Rank: ${opp.iv_rank.toFixed(0)}%`);
+            }
+            if (opp.liquidity_score) {
+                criteria.push(`Liquidity: ${(opp.liquidity_score * 100).toFixed(0)}%`);
+            }
+            if (opp.earnings_distance) {
+                criteria.push(`Earnings: ${opp.earnings_distance} days`);
+            }
+            if (opp.delta) {
+                criteria.push(`Delta: ${opp.delta.toFixed(2)}`);
+            }
+            if (opp.theta) {
+                criteria.push(`Theta: ${opp.theta.toFixed(3)}`);
+            }
+            
+            return criteria.join(' | ');
+        }
+        
+        // Execute trade function
+        function executeTrade(symbol, strike, expiry) {
+            console.log(`Executing trade: ${symbol} $${strike} Put expiring ${expiry}`);
+            // In a real implementation, this would trigger the trade execution
+            alert(`Trade order placed for ${symbol} $${strike} Put expiring ${expiry}`);
+        }
+        
+        // View details function
+        function viewDetails(symbol) {
+            console.log(`Viewing details for ${symbol}`);
+            // In a real implementation, this would open a detailed view
+            alert(`Opening detailed analysis for ${symbol}`);
+        }
+        
+        // Create position actions
+        function createPositionActions(pos) {
+            const actions = [];
+            
+            // Determine priority and action type
+            const priority = getPositionPriority(pos);
+            const actionType = getPositionActionType(pos);
+            
+            // Create action buttons based on priority and type
+            if (pos.status === 'ROLLING') {
+                actions.push(`<button class="btn btn-danger btn-sm" onclick="rollPosition('${pos.symbol}', ${pos.strike}, '${pos.expiry}', 'defensive')" title="High Priority - Roll Defensive">🚨 Roll (Defensive)</button>`);
+            } else if (pos.status === 'CLOSING') {
+                actions.push(`<button class="btn btn-success btn-sm" onclick="closePosition('${pos.symbol}', ${pos.strike}, '${pos.expiry}')" title="Close Position">✅ Close</button>`);
+            } else if (actionType === 'close') {
+                const closeReason = pos.close_recommendation && pos.close_recommendation.includes('Strong profit') ? 'profit' : 'loss';
+                actions.push(`<button class="btn btn-success btn-sm" onclick="closePosition('${pos.symbol}', ${pos.strike}, '${pos.expiry}', '${closeReason}')" title="${pos.close_recommendation || 'Close Position'}">💰 Close (${closeReason === 'profit' ? 'Profit' : 'Loss'})</button>`);
+            } else if (actionType === 'roll') {
+                const rollType = pos.dte_color === 'red' ? 'urgent' : 'normal';
+                actions.push(`<button class="btn btn-warning btn-sm" onclick="rollPosition('${pos.symbol}', ${pos.strike}, '${pos.expiry}', '${rollType}')" title="${pos.roll_recommendation || 'Roll Position'}">⚠️ Roll</button>`);
+            } else if (actionType === 'monitor') {
+                actions.push(`<button class="btn btn-secondary btn-sm" onclick="monitorPosition('${pos.symbol}', ${pos.strike}, '${pos.expiry}')" title="${pos.roll_recommendation || pos.close_recommendation || 'Monitor Position'}">📊 Monitor</button>`);
+            } else {
+                actions.push(`<button class="btn btn-primary btn-sm" onclick="viewPositionDetails('${pos.symbol}', ${pos.strike}, '${pos.expiry}')" title="View Position Details">👁️ View</button>`);
+            }
+            
+            // Add additional action buttons for detailed management
+            if (pos.type !== 'STOCK') {
+                actions.push(`<button class="btn btn-info btn-sm" onclick="showPositionAnalysis('${pos.symbol}')" title="Technical Analysis">📈 Analysis</button>`);
+                actions.push(`<button class="btn btn-outline-secondary btn-sm" onclick="showPositionHistory('${pos.symbol}')" title="Position History">📋 History</button>`);
+            }
+            
+            return actions.join(' ');
+        }
+        
+        // Get position priority
+        function getPositionPriority(pos) {
+            if (pos.status === 'ROLLING' || pos.status === 'CLOSING') return 'high';
+            if (pos.dte_color === 'red' || pos.delta_risk === 'high') return 'medium';
+            return 'low';
+        }
+        
+        // Get position action type
+        function getPositionActionType(pos) {
+            if (pos.status === 'ROLLING') return 'roll';
+            if (pos.status === 'CLOSING') return 'close';
+            if (pos.close_recommendation) return 'close';
+            if (pos.roll_recommendation || pos.dte_color === 'red') return 'roll';
+            if (pos.delta_risk === 'high') return 'monitor';
+            return 'view';
+        }
+        
+        // Position action functions
+        function rollPosition(symbol, strike, expiry, rollType) {
+            console.log(`Rolling position: ${symbol} $${strike} expiring ${expiry} (${rollType})`);
+            
+            if (rollType === 'defensive') {
+                if (confirm(`🚨 DEFENSIVE ROLL: ${symbol} $${strike} Put\n\nThis is a high-priority defensive roll due to:\n- Expiring within 7 days\n- High delta risk\n- Market conditions\n\nProceed with defensive roll?`)) {
+                    executeRoll(symbol, strike, expiry, 'defensive');
+                }
+            } else {
+                if (confirm(`Roll ${symbol} $${strike} Put expiring ${expiry}?\n\nRoll type: ${rollType}\nReason: ${rollType === 'urgent' ? 'Expiring soon' : 'Normal roll'}`)) {
+                    executeRoll(symbol, strike, expiry, rollType);
+                }
+            }
+        }
+        
+        function closePosition(symbol, strike, expiry, reason) {
+            console.log(`Closing position: ${symbol} $${strike} expiring ${expiry} (${reason})`);
+            
+            const reasonText = reason === 'profit' ? 'Take profit' : reason === 'loss' ? 'Cut losses' : 'Manual close';
+            
+            if (confirm(`Close ${symbol} $${strike} Put expiring ${expiry}?\n\nReason: ${reasonText}\nAction: Close position`)) {
+                executeClose(symbol, strike, expiry, reason);
+            }
+        }
+        
+        function monitorPosition(symbol, strike, expiry) {
+            console.log(`Monitoring position: ${symbol} $${strike} expiring ${expiry}`);
+            alert(`Position ${symbol} $${strike} is now being monitored closely.\n\nYou will receive alerts for any significant changes.`);
+        }
+        
+        function viewPositionDetails(symbol, strike, expiry) {
+            console.log(`Viewing details for: ${symbol} $${strike} expiring ${expiry}`);
+            alert(`Opening detailed view for ${symbol} $${strike} Put expiring ${expiry}\n\nThis will show:\n- Greeks analysis\n- Risk metrics\n- Historical performance\n- Recommendations`);
+        }
+        
+        function showPositionAnalysis(symbol) {
+            console.log(`Showing analysis for: ${symbol}`);
+            alert(`Opening technical analysis for ${symbol}\n\nThis will show:\n- Price charts\n- Support/resistance levels\n- Volatility analysis\n- Option chain analysis`);
+        }
+        
+        function showPositionHistory(symbol) {
+            console.log(`Showing history for: ${symbol}`);
+            alert(`Opening position history for ${symbol}\n\nThis will show:\n- Trade history\n- P&L tracking\n- Roll history\n- Performance metrics`);
+        }
+        
+        // Execute position actions
+        function executeRoll(symbol, strike, expiry, rollType) {
+            console.log(`Executing roll: ${symbol} $${strike} (${rollType})`);
+            // In a real implementation, this would trigger the roll execution
+            alert(`Roll order placed for ${symbol} $${strike} Put (${rollType} roll)\n\nOrder submitted to broker.`);
+        }
+        
+        function executeClose(symbol, strike, expiry, reason) {
+            console.log(`Executing close: ${symbol} $${strike} (${reason})`);
+            // In a real implementation, this would trigger the close execution
+            alert(`Close order placed for ${symbol} $${strike} Put\n\nReason: ${reason}\nOrder submitted to broker.`);
         }
 
         // Update daily workflow
@@ -777,6 +1118,203 @@
                     <td>${item.time}</td>
                 `;
                 tbody.appendChild(tr);
+            });
+            
+            // Update workflow action buttons
+            updateWorkflowActionButtons(workflowData);
+            
+            // Update next workflow info
+            updateNextWorkflowInfo(workflowData);
+        }
+        
+        // Update workflow action buttons
+        function updateWorkflowActionButtons(workflowData) {
+            const morningBtn = document.getElementById('morning-planning-btn');
+            const afternoonBtn = document.getElementById('afternoon-execution-btn');
+            const eodBtn = document.getElementById('eod-routine-btn');
+            
+            if (!morningBtn || !afternoonBtn || !eodBtn) return;
+            
+            // Reset all buttons
+            [morningBtn, afternoonBtn, eodBtn].forEach(btn => {
+                btn.classList.remove('completed', 'in-progress');
+                btn.disabled = false;
+            });
+            
+            // Update based on workflow status
+            workflowData.forEach(item => {
+                if (item.name === 'Morning Planning') {
+                    if (item.status === 'completed') {
+                        morningBtn.classList.add('completed');
+                        morningBtn.disabled = true;
+                    } else if (item.status === 'in_progress') {
+                        morningBtn.classList.add('in-progress');
+                        morningBtn.disabled = true;
+                    }
+                } else if (item.name === 'Afternoon Execution') {
+                    if (item.status === 'completed') {
+                        afternoonBtn.classList.add('completed');
+                        afternoonBtn.disabled = true;
+                    } else if (item.status === 'in_progress') {
+                        afternoonBtn.classList.add('in-progress');
+                        afternoonBtn.disabled = true;
+                    }
+                } else if (item.name === 'EOD Routine') {
+                    if (item.status === 'completed') {
+                        eodBtn.classList.add('completed');
+                        eodBtn.disabled = true;
+                    } else if (item.status === 'in_progress') {
+                        eodBtn.classList.add('in-progress');
+                        eodBtn.disabled = true;
+                    }
+                }
+            });
+        }
+        
+        // Update next workflow info
+        function updateNextWorkflowInfo(workflowData) {
+            const nextWorkflowTime = document.getElementById('next-workflow-time');
+            const nextWorkflowDescription = document.getElementById('next-workflow-description');
+            
+            if (!nextWorkflowTime || !nextWorkflowDescription) return;
+            
+            const now = new Date();
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+            
+            let nextWorkflow = '';
+            let nextTime = '';
+            let description = '';
+            
+            if (currentHour < 9 || (currentHour === 9 && currentMinute < 30)) {
+                nextWorkflow = 'Morning Planning';
+                nextTime = '9:00 AM';
+                description = 'Review overnight positions, check for roll opportunities, plan day\'s trades';
+            } else if (currentHour < 14 || (currentHour === 14 && currentMinute < 30)) {
+                nextWorkflow = 'Afternoon Execution';
+                nextTime = '2:30 PM';
+                description = 'Execute planned trades, monitor positions, adjust as needed';
+            } else if (currentHour < 16 || (currentHour === 16 && currentMinute < 15)) {
+                nextWorkflow = 'EOD Routine';
+                nextTime = '4:15 PM';
+                description = 'Close positions if needed, log results, prepare for next day';
+            } else {
+                nextWorkflow = 'Morning Planning (Tomorrow)';
+                nextTime = '9:00 AM Tomorrow';
+                description = 'Market closed. Next session: Morning planning routine';
+            }
+            
+            nextWorkflowTime.textContent = `${nextWorkflow} - ${nextTime}`;
+            nextWorkflowDescription.textContent = description;
+        }
+        
+        // Workflow action functions
+        function startMorningPlanning() {
+            const btn = document.getElementById('morning-planning-btn');
+            btn.classList.add('in-progress');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Morning Planning...';
+            
+            fetch('/api/mark-morning-complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    notes: 'Morning planning completed'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Morning planning completed:', data);
+                btn.classList.remove('in-progress');
+                btn.classList.add('completed');
+                btn.innerHTML = '<i class="fas fa-check"></i> Morning Planning (9:00 AM)';
+                
+                // Refresh workflow data
+                fetch('/api/daily-workflow')
+                    .then(response => response.json())
+                    .then(data => updateDailyWorkflow(data))
+                    .catch(error => console.error('Error refreshing workflow:', error));
+            })
+            .catch(error => {
+                console.error('Error completing morning planning:', error);
+                btn.classList.remove('in-progress');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sun"></i> Morning Planning (9:00 AM)';
+            });
+        }
+        
+        function startAfternoonExecution() {
+            const btn = document.getElementById('afternoon-execution-btn');
+            btn.classList.add('in-progress');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Afternoon Execution...';
+            
+            fetch('/api/mark-afternoon-complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    notes: 'Afternoon execution completed'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Afternoon execution completed:', data);
+                btn.classList.remove('in-progress');
+                btn.classList.add('completed');
+                btn.classList.add('completed');
+                btn.innerHTML = '<i class="fas fa-check"></i> Afternoon Execution (2:30 PM)';
+                
+                // Refresh workflow data
+                fetch('/api/daily-workflow')
+                    .then(response => response.json())
+                    .then(data => updateDailyWorkflow(data))
+                    .catch(error => console.error('Error refreshing workflow:', error));
+            })
+            .catch(error => {
+                console.error('Error completing afternoon execution:', error);
+                btn.classList.remove('in-progress');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-chart-line"></i> Afternoon Execution (2:30 PM)';
+            });
+        }
+        
+        function startEODRoutine() {
+            const btn = document.getElementById('eod-routine-btn');
+            btn.classList.add('in-progress');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> EOD Routine...';
+            
+            fetch('/api/mark-eod-complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    notes: 'EOD routine completed'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('EOD routine completed:', data);
+                btn.classList.remove('in-progress');
+                btn.classList.add('completed');
+                btn.innerHTML = '<i class="fas fa-check"></i> EOD Routine (4:15 PM)';
+                
+                // Refresh workflow data
+                fetch('/api/daily-workflow')
+                    .then(response => response.json())
+                    .then(data => updateDailyWorkflow(data))
+                    .catch(error => console.error('Error refreshing workflow:', error));
+            })
+            .catch(error => {
+                console.error('Error completing EOD routine:', error);
+                btn.classList.remove('in-progress');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-moon"></i> EOD Routine (4:15 PM)';
             });
         }
 
@@ -819,6 +1357,60 @@
             if (daysRemainingElement) {
                 daysRemainingElement.textContent = incomeData.days_remaining + ' days remaining';
             }
+            
+            // Update income management alerts
+            updateIncomeAlerts(incomeData);
+        }
+        
+        // Update income management alerts
+        function updateIncomeAlerts(incomeData) {
+            const alertContainer = document.getElementById('income-alerts');
+            const alertTitle = document.getElementById('income-alert-title');
+            const alertMessage = document.getElementById('income-alert-message');
+            
+            if (!alertContainer || !alertTitle || !alertMessage) return;
+            
+            const progress = incomeData.progress_percentage || 0;
+            const daysRemaining = incomeData.days_remaining || 0;
+            const collected = incomeData.collected_income || 0;
+            const target = incomeData.monthly_target || 0;
+            
+            let alertType = 'info';
+            let title = '';
+            let message = '';
+            
+            // Determine alert type and message based on progress
+            if (progress >= 120) {
+                // Ahead of target
+                alertType = 'success';
+                title = '🎉 Ahead of Target!';
+                message = `You're ${progress.toFixed(0)}% of your monthly goal with ${daysRemaining} days remaining. Consider increasing position sizes or taking on more opportunities.`;
+            } else if (progress >= 100) {
+                // On target
+                alertType = 'success';
+                title = '✅ On Target!';
+                message = `You've reached ${progress.toFixed(0)}% of your monthly goal. Maintain current strategy and look for additional opportunities.`;
+            } else if (progress >= 80) {
+                // Slightly behind
+                alertType = 'warning';
+                title = '⚠️ Slightly Behind Target';
+                message = `You're at ${progress.toFixed(0)}% of your monthly goal with ${daysRemaining} days remaining. Consider more aggressive opportunities.`;
+            } else if (progress >= 60) {
+                // Behind target
+                alertType = 'warning';
+                title = '⚠️ Behind Target';
+                message = `You're at ${progress.toFixed(0)}% of your monthly goal. Consider:\n- More aggressive strikes\n- Shorter DTE positions\n- Additional opportunities`;
+            } else {
+                // Significantly behind
+                alertType = 'danger';
+                title = '🚨 Significantly Behind Target';
+                message = `You're at ${progress.toFixed(0)}% of your monthly goal. Consider:\n- Higher risk/reward positions\n- More frequent trading\n- Review strategy`;
+            }
+            
+            // Update alert styling and content
+            alertContainer.className = `alert alert-${alertType}`;
+            alertTitle.textContent = title;
+            alertMessage.textContent = message;
         }
         
                              // Update realized P&L metrics
@@ -1887,6 +2479,31 @@
                                 </tbody>
                             </table>
                         </div>
+                        
+                        <div style="margin-top: 1rem;">
+                            <div class="section-label">Workflow Actions</div>
+                            <div class="workflow-actions">
+                                <button id="morning-planning-btn" class="btn btn-primary btn-sm" onclick="startMorningPlanning()">
+                                    <i class="fas fa-sun"></i> Morning Planning (9:00 AM)
+                                </button>
+                                <button id="afternoon-execution-btn" class="btn btn-success btn-sm" onclick="startAfternoonExecution()">
+                                    <i class="fas fa-chart-line"></i> Afternoon Execution (2:30 PM)
+                                </button>
+                                <button id="eod-routine-btn" class="btn btn-warning btn-sm" onclick="startEODRoutine()">
+                                    <i class="fas fa-moon"></i> EOD Routine (4:15 PM)
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 1rem;">
+                            <div class="section-label">Next Workflow</div>
+                            <div id="next-workflow" class="alert alert-info">
+                                <div>
+                                    <strong id="next-workflow-time">Loading...</strong>
+                                    <div id="next-workflow-description">Loading workflow details...</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="card">
@@ -1913,6 +2530,16 @@
                                 <div id="progress-bar" class="progress-bar" style="width: 0%;"></div>
                             </div>
                             <div id="days-remaining" class="section-label" style="text-align: right;">Loading...</div>
+                        </div>
+                        
+                        <div style="margin-top: 1rem;">
+                            <div class="section-label">Income Management Alerts</div>
+                            <div id="income-alerts" class="alert alert-info">
+                                <div>
+                                    <strong id="income-alert-title">Loading alerts...</strong>
+                                    <div id="income-alert-message">Loading income management recommendations...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

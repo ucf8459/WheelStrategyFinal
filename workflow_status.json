@@ -1,0 +1,31 @@
+{
+  "date": "2025-07-30",
+  "morning_routine": {
+    "completed": true,
+    "completed_at": "2025-07-30T17:38:28.031201",
+    "planned_time": "09:00",
+    "actual_time": "17:38",
+    "notes": "Morning planning completed"
+  },
+  "afternoon_checkin": {
+    "completed": true,
+    "completed_at": "2025-07-30T17:38:38.750489",
+    "planned_time": "14:30",
+    "actual_time": "17:38",
+    "notes": "Afternoon execution completed"
+  },
+  "eod_routine": {
+    "completed": true,
+    "completed_at": "2025-07-30T17:38:40.991966",
+    "planned_time": "16:00",
+    "actual_time": "17:38",
+    "notes": "EOD routine completed"
+  },
+  "weekly_review": {
+    "completed": false,
+    "completed_at": null,
+    "planned_time": "16:30",
+    "actual_time": null,
+    "notes": ""
+  }
+}

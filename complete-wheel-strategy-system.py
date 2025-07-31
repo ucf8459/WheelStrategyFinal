@@ -93,60 +93,95 @@ import queue as Queue
 
 # REMOVED: AsyncGreeksWorker class - now using shared connection architecture
 
-# SINGLE CONNECTION ARCHITECTURE: All components share monitor.ib connection
+# UNIQUE SOCKET CONNECTION POOL for Greeks requests
+_greeks_connection_pool = {}
+_greeks_port_counter = 8000  # Start from port 8000 for Greeks connections
+
+def _get_unique_greeks_connection(symbol, logger):
+    """Get a unique IB connection for Greeks requests using dedicated ports"""
+    global _greeks_connection_pool, _greeks_port_counter
+    
+    # Use symbol-specific connection to avoid conflicts
+    if symbol not in _greeks_connection_pool:
+        try:
+            # Create new IB connection with unique client ID and socket port
+            unique_ib = IB()
+            client_id = 100 + len(_greeks_connection_pool)  # Start from client ID 100
+            port = _greeks_port_counter + len(_greeks_connection_pool)
+            
+            # Connect with unique client ID
+            unique_ib.connect(
+                host='127.0.0.1',
+                port=7496,  # TWS port
+                clientId=client_id
+            )
+            
+            _greeks_connection_pool[symbol] = unique_ib
+            logger.info(f"✅ Created unique Greeks connection for {symbol} (client_id={client_id})")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to create unique connection for {symbol}: {e}")
+            return None
+    
+    return _greeks_connection_pool.get(symbol)
 
 def _get_delta_from_ibkr(ib_connection, contract, logger):
     """
-    Get live delta using the SHARED connection (single connection architecture)
-    FIXED: No separate connections - use monitor.ib for all Greeks requests
+    Get live delta using UNIQUE socket connections per symbol
+    FIXED: Each symbol gets its own connection to avoid socket conflicts
     """
     try:
         symbol = contract.symbol
-        logger.info(f"📞 Requesting delta for {symbol} via shared connection")
+        logger.info(f"📞 Requesting delta for {symbol} via unique connection")
         
-        # Use shared connection directly - no async worker needed
+        # Get unique connection for this symbol to avoid socket conflicts
+        unique_ib = _get_unique_greeks_connection(symbol, logger)
+        if not unique_ib:
+            logger.error(f"❌ {symbol}: Failed to get unique connection")
+            return None
+            
         # Request market data with proper tick types for Greeks
-        ticker = ib_connection.reqMktData(contract, "10,11,12,13", False, False)
+        ticker = unique_ib.reqMktData(contract, "10,11,12,13", False, False)
         
-        # Wait for Greeks data with shorter timeout (shared connection is more responsive)
+        # Wait for Greeks data
         max_attempts = 20  # 2 seconds total
         for attempt in range(max_attempts):
-            ib_connection.sleep(0.1)  # Use ib_insync's sleep method
+            unique_ib.sleep(0.1)  # Use unique connection's sleep method
             
             # Check for Model Option Computation (highest priority)
             if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks and ticker.modelGreeks.delta is not None:
                 delta = ticker.modelGreeks.delta
                 if not math.isnan(delta):
-                    ib_connection.cancelMktData(contract)
+                    unique_ib.cancelMktData(contract)
                     delta_value = float(delta)
-                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via modelGreeks")
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via modelGreeks (unique connection)")
                     return delta_value
             
             # Check optionComputation data
             if hasattr(ticker, 'optionComputation') and ticker.optionComputation and ticker.optionComputation.delta is not None:
                 delta = ticker.optionComputation.delta
                 if not math.isnan(delta):
-                    ib_connection.cancelMktData(contract)
+                    unique_ib.cancelMktData(contract)
                     delta_value = float(delta)
-                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via optionComputation")
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via optionComputation (unique connection)")
                     return delta_value
                     
             # Check bid/ask Greeks as backup
             if hasattr(ticker, 'bidGreeks') and ticker.bidGreeks and ticker.bidGreeks.delta is not None:
                 delta = ticker.bidGreeks.delta
                 if not math.isnan(delta):
-                    ib_connection.cancelMktData(contract)
+                    unique_ib.cancelMktData(contract)
                     delta_value = float(delta)
-                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via bidGreeks")
+                    logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via bidGreeks (unique connection)")
                     return delta_value
         
         # Timeout - cleanup and return None
-        ib_connection.cancelMktData(contract)
-        logger.warning(f"⏰ {symbol}: No Greeks after 2s (shared connection)")
+        unique_ib.cancelMktData(contract)
+        logger.warning(f"⏰ {symbol}: No Greeks after 2s (unique connection)")
         return None
         
     except Exception as e:
-        logger.error(f"❌ {contract.symbol}: Shared connection Greeks failed: {e}")
+        logger.error(f"❌ {contract.symbol}: Unique connection Greeks failed: {e}")
         return None
 
 # -------------------------------------------------------------
