@@ -1,140 +1,121 @@
-using InteractiveBrokers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WheelStrategy.Core.Configuration;
-using WheelStrategy.Core.Interfaces;
+using AutoFinance.Broker.InteractiveBrokers.Controllers;
+using AutoFinance.Broker.InteractiveBrokers;
 
 namespace WheelStrategy.IBKR.Services;
 
 /// <summary>
-/// Manages IBKR TWS/Gateway connections
+/// IBKR Connection Service using AutoFinance.Broker
 /// </summary>
-public class IBKRConnectionService : IAsyncDisposable
+public class IBKRConnectionService : IDisposable
 {
     private readonly ILogger<IBKRConnectionService> _logger;
-    private readonly IBKROptions _options;
-    private readonly Dictionary<string, IB> _connections = new();
-    private readonly object _lock = new();
-    
+    private readonly WheelStrategyOptions _options;
+    private ITwsController? _twsController;
+    private TwsObjectFactory? _twsObjectFactory;
+    private bool _isConnected = false;
+    private readonly object _lockObject = new object();
+    private int _nextRequestId = 1;
+
     public IBKRConnectionService(
-        IOptions<WheelStrategyOptions> options,
-        ILogger<IBKRConnectionService> logger)
+        ILogger<IBKRConnectionService> logger,
+        IOptions<WheelStrategyOptions> options)
     {
-        _options = options.Value.IBKR;
         _logger = logger;
+        _options = options.Value;
     }
-    
+
     /// <summary>
-    /// Gets or creates a connection for a specific component
+    /// Connects to IBKR using AutoFinance.Broker
     /// </summary>
-    public async Task<IB> GetConnectionAsync(string componentName)
+    public async Task<bool> ConnectAsync()
     {
-        lock (_lock)
+        if (_isConnected) return true;
+
+        lock (_lockObject)
         {
-            if (_connections.TryGetValue(componentName, out var existingConnection))
-            {
-                if (existingConnection.IsConnected())
-                {
-                    return existingConnection;
-                }
-                else
-                {
-                    _connections.Remove(componentName);
-                }
-            }
+            if (_isConnected) return true;
         }
-        
-        var connection = await CreateConnectionAsync(componentName);
-        
-        lock (_lock)
-        {
-            _connections[componentName] = connection;
-        }
-        
-        return connection;
-    }
-    
-    /// <summary>
-    /// Creates a new IBKR connection
-    /// </summary>
-    private async Task<IB> CreateConnectionAsync(string componentName)
-    {
-        var ib = new IB();
-        var clientId = GetClientId(componentName);
-        
+
         try
         {
-            _logger.LogInformation("Connecting {Component} to IBKR at {Host}:{Port} with client ID {ClientId}", 
-                componentName, _options.Host, _options.Port, clientId);
+            _logger.LogInformation("Connecting to IBKR using AutoFinance.Broker at {Host}:{Port}", _options.IBKR.Host, _options.IBKR.Port);
+
+            // Create TWS object factory and controller
+            _twsObjectFactory = new TwsObjectFactory(_options.IBKR.Host, _options.IBKR.Port, _options.IBKR.ClientId);
+            _twsController = _twsObjectFactory.TwsController;
             
-            await Task.Run(() =>
+            // Connect to IBKR
+            await _twsController.EnsureConnectedAsync();
+            
+            if (_twsController.Connected)
             {
-                ib.Connect(_options.Host, _options.Port, clientId);
-                ib.RequestMarketDataType(1); // Live data
-            });
-            
-            _logger.LogInformation("Successfully connected {Component} to IBKR", componentName);
-            return ib;
+                lock (_lockObject)
+                {
+                    _isConnected = true;
+                }
+                _logger.LogInformation("Successfully connected to IBKR using AutoFinance.Broker");
+                return true;
+            }
+            else
+            {
+                _logger.LogError("Failed to connect to IBKR - TWS controller not connected");
+                return false;
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to connect {Component} to IBKR", componentName);
-            throw;
+            _logger.LogError(ex, "Failed to connect to IBKR using AutoFinance.Broker");
+            return false;
         }
     }
-    
+
     /// <summary>
-    /// Gets a unique client ID for a component
+    /// Gets the TWS controller for API calls
     /// </summary>
-    private int GetClientId(string componentName)
+    public ITwsController? GetTwsController()
     {
-        var baseClientId = componentName switch
-        {
-            "Monitor" => 10000,
-            "Scanner" => 11000,
-            "Executor" => 12000,
-            _ => 13000
-        };
-        
-        // Add a small random offset to avoid conflicts
-        var random = new Random();
-        return baseClientId + random.Next(0, 999);
+        return _isConnected ? _twsController : null;
     }
-    
+
     /// <summary>
-    /// Disconnects all connections
+    /// Gets the next request ID
     /// </summary>
-    public async Task DisconnectAllAsync()
+    public int GetNextRequestId()
     {
-        var tasks = _connections.Values
-            .Where(ib => ib.IsConnected())
-            .Select(ib => Task.Run(() => ib.Disconnect()));
-        
-        await Task.WhenAll(tasks);
-        
-        lock (_lock)
+        return Interlocked.Increment(ref _nextRequestId);
+    }
+
+    /// <summary>
+    /// Checks if connected to IBKR
+    /// </summary>
+    public bool IsConnected => _isConnected;
+
+    /// <summary>
+    /// Disconnects from IBKR
+    /// </summary>
+    public void Disconnect()
+    {
+        lock (_lockObject)
         {
-            _connections.Clear();
+            if (_twsController != null && _twsController.Connected)
+            {
+                _twsController.DisconnectAsync();
+            }
+            _isConnected = false;
+            _twsController = null;
+            _twsObjectFactory = null;
         }
-        
-        _logger.LogInformation("Disconnected all IBKR connections");
+        _logger.LogInformation("Disconnected from IBKR");
     }
-    
+
     /// <summary>
-    /// Gets connection status for all components
+    /// Disposes the connection
     /// </summary>
-    public Dictionary<string, bool> GetConnectionStatus()
+    public void Dispose()
     {
-        lock (_lock)
-        {
-            return _connections.ToDictionary(
-                kvp => kvp.Key,
-                kvp => kvp.Value.IsConnected());
-        }
-    }
-    
-    public async ValueTask DisposeAsync()
-    {
-        await DisconnectAllAsync();
+        Disconnect();
     }
 } 

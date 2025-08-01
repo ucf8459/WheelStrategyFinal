@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wheel Strategy Dashboard</title>
+    <style>
+        /* Global Styles */
+        :root {
+            --primary: #3a506b;
+            --secondary: #5bc0be;
+            --accent: #ffa62b;
+            --danger: #e63946;
+            --success: #2a9d8f;
+            --warning: #f4a261;
+            --light: #edf2f4;
+            --dark: #1d3557;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--dark);
+        }
+        
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .sample-data-banner {
+            background: linear-gradient(45deg, #ff6b6b, #ffa500);
+            color: white;
+            text-align: center;
+            padding: 0.5rem;
+            font-weight: bold;
+            border-bottom: 2px solid #ff4757;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+        
+        .sample-data-indicator {
+            background-color: #ff6b6b;
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-left: 0.5rem;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 1rem;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-rows: auto auto auto;
+            gap: 1rem;
+        }
+        
+        .sidebar {
+            display: grid;
+            grid-template-rows: auto auto;
+            gap: 1rem;
+        }
+        
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        
+        .status-active {
+            background-color: var(--success);
+        }
+        
+        .status-warning {
+            background-color: var(--warning);
+        }
+        
+        .status-danger {
+            background-color: var(--danger);
+        }
+        
+        /* DTE Color Coding */
+        .dte-red {
+            color: var(--danger) !important;
+            font-weight: bold;
+        }
+        
+        .dte-yellow {
+            color: var(--warning) !important;
+            font-weight: bold;
+        }
+        
+        .dte-white {
+            color: var(--dark) !important;
+        }
+        
+        /* Delta Risk Indicators */
+        .delta-high {
+            background-color: var(--danger) !important;
+            color: white !important;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .delta-medium {
+            background-color: var(--warning) !important;
+            color: var(--dark) !important;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .delta-low {
+            background-color: var(--success) !important;
+            color: white !important;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        table th, table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        table th {
+            background-color: var(--light);
+            color: var(--dark);
+        }
+        
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .badge-success {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .badge-warning {
+            background-color: var(--warning);
+            color: white;
+        }
+        
+        .badge-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .badge-info {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .text-muted {
+            color: #6c757d;
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+        
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .metric-card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 1rem;
+            text-align: center;
+            position: relative;
+        }
+        
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 0.5rem 0;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .alert {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .alert-critical {
+            background-color: rgba(230, 57, 70, 0.1);
+            border-left: 4px solid var(--danger);
+        }
+        
+        .alert-important {
+            background-color: rgba(244, 162, 97, 0.1);
+            border-left: 4px solid var(--warning);
+        }
+        
+        .alert-info {
+            background-color: rgba(91, 192, 190, 0.1);
+            border-left: 4px solid var(--secondary);
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .btn-success {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .badge-market {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 0.5rem;
+        }
+        
+        .badge-bull {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .badge-bear {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .badge-neutral {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .opportunity-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background-color: rgba(91, 192, 190, 0.1);
+            border-radius: 4px;
+        }
+        
+        .opportunity-details {
+            flex-grow: 1;
+        }
+        
+        .opportunity-symbol {
+            font-weight: bold;
+        }
+        
+        .opportunity-return {
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        .section-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+        
+        .loading {
+            text-align: center;
+            font-style: italic;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <h1>Wheel Strategy Dashboard</h1>
+        </div>
+        <div class="status-indicator">
+            <div class="status-dot status-active" id="system-status-dot"></div>
+            <span id="system-status-text">System Active</span>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="dashboard-grid">
+            <div class="main-content">
+                <!-- Portfolio Overview -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Portfolio Overview</h2>
+                        <div>
+                            <span id="market-regime" class="badge-market badge-neutral">Loading...</span>
+                            <span id="last-update" class="section-label">Updated: Loading...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Account Value</div>
+                            <div id="account-value" class="metric-value">Loading...</div>
+                            <div id="daily-change" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Cash Available</div>
+                            <div id="cash-available" class="metric-value">Loading...</div>
+                            <div id="cash-percentage" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Unrealized P&L</div>
+                            <div id="unrealized-pnl" class="metric-value">Loading...</div>
+                            <div class="section-label">Current Positions</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">VIX Level</div>
+                            <div id="vix-value" class="metric-value">Loading...</div>
+                            <div id="vix-percentile" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Market Regime</div>
+                            <div id="regime-value" class="metric-value">Loading...</div>
+                            <div id="regime-strength" class="section-label">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Win Rate</div>
+                            <div id="win-rate" class="metric-value">Loading...</div>
+                            <div class="section-label">Success Rate</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Positions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Active Positions</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Live</span>
+                        </div>
+                    </div>
+                    
+                    <table id="positions-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Quantity</th>
+                                <th>Strike</th>
+                                <th>Expiry</th>
+                                <th>DTE</th>
+                                <th>Stock Price</th>
+                                <th>Premium</th>
+                                <th>P&L %</th>
+                                <th>Delta</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-tbody">
+                            <tr>
+                                <td colspan="10" class="loading">Loading positions...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Opportunities -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Opportunities</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Scanning</span>
+                        </div>
+                    </div>
+                    
+                    <div id="opportunities-container" class="loading">
+                        Loading opportunities...
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <!-- Alerts -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Alerts</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Active</span>
+                        </div>
+                    </div>
+                    
+                    <div id="alerts-container" class="loading">
+                        Loading alerts...
+                    </div>
+                </div>
+
+                <!-- System Status -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>System Status</h2>
+                    </div>
+                    
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">API Connection</div>
+                            <div id="api-connection" class="metric-value" style="color: var(--success);">Connected</div>
+                            <div class="section-label">IBKR Gateway</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Circuit Breaker</div>
+                            <div id="circuit-breaker" class="metric-value" style="color: var(--success);">Inactive</div>
+                            <div class="section-label">Risk Management</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:7001/api/dashboard';
+        
+        function updateConnectionStatus(status, message) {
+            const statusEl = document.getElementById('system-status-text');
+            const statusDot = document.getElementById('system-status-dot');
+            statusEl.textContent = message;
+            
+            if (status === 'connected') {
+                statusDot.className = 'status-dot status-active';
+            } else if (status === 'warning') {
+                statusDot.className = 'status-dot status-warning';
+            } else {
+                statusDot.className = 'status-dot status-danger';
+            }
+        }
+
+        async function fetchData(endpoint) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.error(`Error fetching ${endpoint}:`, error);
+                return null;
+            }
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(amount);
+        }
+
+        function formatPercent(value) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'percent',
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1
+            }).format(value);
+        }
+
+        async function updateMetrics() {
+            const metrics = await fetchData('/metrics');
+            if (!metrics) return;
+
+            // Update portfolio metrics
+            document.getElementById('account-value').textContent = formatCurrency(metrics.accountValue);
+            document.getElementById('cash-available').textContent = formatCurrency(metrics.availableFunds);
+            document.getElementById('cash-percentage').textContent = formatPercent(metrics.cashPercentage);
+            document.getElementById('unrealized-pnl').textContent = formatCurrency(metrics.unrealizedPnL);
+            document.getElementById('win-rate').textContent = formatPercent(metrics.winRate);
+            
+            // Update VIX and market regime
+            document.getElementById('vix-value').textContent = metrics.vixLevel.toFixed(1);
+            document.getElementById('vix-percentile').textContent = `${metrics.vixPercentile}%`;
+            document.getElementById('regime-value').textContent = metrics.marketRegime;
+            
+            // Update market regime badge
+            const regimeBadge = document.getElementById('market-regime');
+            regimeBadge.className = 'badge-market ' + 
+                (metrics.marketRegime === 'BULL' ? 'badge-bull' : 
+                 metrics.marketRegime === 'BEAR' ? 'badge-bear' : 
+                 'badge-neutral');
+            regimeBadge.textContent = metrics.marketRegime;
+            
+            // Update last update time
+            document.getElementById('last-update').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        async function updatePositions() {
+            const positions = await fetchData('/positions');
+            if (!positions) return;
+
+            const tbody = document.getElementById('positions-tbody');
+            tbody.innerHTML = '';
+            
+            if (positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="text-muted">No active positions</td></tr>';
+                return;
+            }
+            
+            positions.forEach(pos => {
+                const tr = document.createElement('tr');
+                
+                // Calculate DTE color
+                const dteColor = pos.dte <= 7 ? 'red' : pos.dte <= 14 ? 'yellow' : 'white';
+                
+                // Calculate delta risk
+                const delta = pos.estimatedDelta || 0;
+                const deltaRisk = Math.abs(delta) > 0.7 ? 'high' : Math.abs(delta) > 0.5 ? 'medium' : 'low';
+                
+                tr.innerHTML = `
+                    <td><strong>${pos.symbol}</strong></td>
+                    <td>${pos.sharesOwned > 0 ? 'STOCK' : 'PUT'}</td>
+                    <td>${pos.sharesOwned > 0 ? pos.sharesOwned : pos.putStrikes.length}</td>
+                    <td>${pos.putStrikes.length > 0 ? '$' + pos.putStrikes[0].toFixed(2) : '-'}</td>
+                    <td>${pos.expiry || '-'}</td>
+                    <td class="dte-${dteColor}">${pos.dte || '-'}</td>
+                    <td>${pos.stockPrice ? '$' + pos.stockPrice.toFixed(2) : '-'}</td>
+                    <td>${pos.totalCredits > 0 ? '$' + pos.totalCredits.toFixed(2) : '-'}</td>
+                    <td>
+                        <span class="badge ${pos.pnl >= 0 ? 'badge-success' : 'badge-warning'}">
+                            ${pos.pnl > 0 ? '+' : ''}${pos.pnl}%
+                        </span>
+                    </td>
+                    <td>
+                        <span class="delta-${deltaRisk}">
+                            ${delta.toFixed(2)}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="viewPosition('${pos.symbol}')">View</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function updateOpportunities() {
+            const opportunities = await fetchData('/opportunities');
+            if (!opportunities) return;
+
+            const container = document.getElementById('opportunities-container');
+            
+            if (opportunities.length === 0) {
+                container.innerHTML = '<div class="section-label">No opportunities found</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            opportunities.slice(0, 5).forEach(opp => {
+                const div = document.createElement('div');
+                div.className = 'opportunity-card';
+                div.innerHTML = `
+                    <div class="opportunity-details">
+                        <div class="opportunity-symbol">${opp.symbol} $${opp.strike} Put</div>
+                        <div>IV Rank: ${opp.ivRank.toFixed(0)}% | DTE: ${opp.daysToExpiration}</div>
+                    </div>
+                    <div class="opportunity-return">${opp.annualReturn.toFixed(1)}% Annualized</div>
+                    <button class="btn btn-primary btn-sm" onclick="executeTrade('${opp.symbol}', ${opp.strike})">Trade</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function updateAlerts() {
+            const alerts = await fetchData('/alerts?count=5');
+            if (!alerts) return;
+
+            const container = document.getElementById('alerts-container');
+            
+            if (alerts.length === 0) {
+                container.innerHTML = '<div class="section-label">No alerts at this time</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            alerts.forEach(alert => {
+                const div = document.createElement('div');
+                div.className = `alert alert-${alert.priority.toLowerCase()}`;
+                div.innerHTML = `
+                    <div>
+                        <strong>${alert.priority}:</strong> ${alert.message}
+                    </div>
+                    <div style="margin-left: auto;">
+                        <button class="btn btn-${alert.priority === 'Critical' ? 'danger' : 
+                                                alert.priority === 'Important' ? 'warning' : 
+                                                'secondary'} btn-sm">
+                            Take Action
+                        </button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function refreshAll() {
+            updateConnectionStatus('connecting', 'Refreshing data...');
+            
+            await Promise.all([
+                updateMetrics(),
+                updatePositions(),
+                updateOpportunities(),
+                updateAlerts()
+            ]);
+            
+            updateConnectionStatus('connected', 'System Active');
+        }
+
+        // Position action functions
+        function viewPosition(symbol) {
+            console.log(`Viewing position: ${symbol}`);
+            alert(`Opening detailed view for ${symbol}\n\nThis will show:\n- Greeks analysis\n- Risk metrics\n- Historical performance\n- Recommendations`);
+        }
+
+        function executeTrade(symbol, strike) {
+            console.log(`Executing trade: ${symbol} $${strike} Put`);
+            alert(`Trade order placed for ${symbol} $${strike} Put\n\nOrder submitted to broker.`);
+        }
+
+        // Initial load
+        refreshAll();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html> 

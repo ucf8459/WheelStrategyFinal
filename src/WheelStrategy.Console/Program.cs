@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using WheelStrategy.Core.Configuration;
 using WheelStrategy.Core.Interfaces;
 using WheelStrategy.Core.Models;
+using WheelStrategy.Core.Services;
 using WheelStrategy.IBKR.Services;
 
 namespace WheelStrategy.Console;
@@ -47,7 +48,7 @@ public class Program
                 
                 // Register services
                 services.AddSingleton<IBKRConnectionService>();
-                services.AddScoped<IBKRMarketDataService>();
+                services.AddScoped<IMarketDataService, IBKRSimulatorService>(); // Using sample data for testing
                 services.AddScoped<IWheelMonitor, WheelMonitor>();
                 services.AddScoped<IWheelScanner, WheelScanner>();
                 services.AddScoped<ITradeExecutor, TradeExecutor>();

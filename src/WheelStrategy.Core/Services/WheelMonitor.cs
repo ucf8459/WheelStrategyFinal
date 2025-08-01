@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using WheelStrategy.Core.Configuration;
 using WheelStrategy.Core.Interfaces;
 using WheelStrategy.Core.Models;
-using WheelStrategy.IBKR.Services;
+
 
 namespace WheelStrategy.Core.Services;
 
@@ -14,7 +14,7 @@ public class WheelMonitor : IWheelMonitor
 {
     private readonly ILogger<WheelMonitor> _logger;
     private readonly WheelStrategyOptions _options;
-    private readonly IBKRMarketDataService _marketDataService;
+    private readonly IMarketDataService _marketDataService;
     private readonly List<WheelPosition> _wheelPositions = new();
     private readonly List<Dictionary<string, object>> _tradeHistory = new();
     private decimal _accountValue;
@@ -23,7 +23,7 @@ public class WheelMonitor : IWheelMonitor
     
     public WheelMonitor(
         IOptions<WheelStrategyOptions> options,
-        IBKRMarketDataService marketDataService,
+        IMarketDataService marketDataService,
         ILogger<WheelMonitor> logger)
     {
         _options = options.Value;

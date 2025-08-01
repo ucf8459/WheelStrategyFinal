@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using WheelStrategy.Core.Configuration;
 using WheelStrategy.Core.Interfaces;
 using WheelStrategy.Core.Models;
-using WheelStrategy.IBKR.Services;
+
 
 namespace WheelStrategy.Core.Services;
 
@@ -14,12 +14,12 @@ public class WheelScanner : IWheelScanner
 {
     private readonly ILogger<WheelScanner> _logger;
     private readonly WheelStrategyOptions _options;
-    private readonly IBKRMarketDataService _marketDataService;
+    private readonly IMarketDataService _marketDataService;
     private readonly IWheelMonitor _wheelMonitor;
     
     public WheelScanner(
         IOptions<WheelStrategyOptions> options,
-        IBKRMarketDataService marketDataService,
+        IMarketDataService marketDataService,
         IWheelMonitor wheelMonitor,
         ILogger<WheelScanner> logger)
     {

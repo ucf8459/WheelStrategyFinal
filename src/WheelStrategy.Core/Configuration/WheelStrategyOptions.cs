@@ -33,18 +33,22 @@ public class WheelStrategyOptions
     public DashboardOptions Dashboard { get; set; } = new();
 }
 
-/// <summary>
-/// IBKR connection options
-/// </summary>
-public class IBKROptions
-{
-    public string Host { get; set; } = "127.0.0.1";
-    public int Port { get; set; } = 7496;
-    public int ClientId { get; set; } = 1;
-    public bool UsePaperTrading { get; set; } = true;
-    public int ConnectionTimeout { get; set; } = 30;
-    public int ReconnectAttempts { get; set; } = 3;
-}
+            /// <summary>
+            /// IBKR connection options
+            /// </summary>
+            public class IBKROptions
+            {
+                public string Host { get; set; } = "127.0.0.1";
+                public int Port { get; set; } = 7496;
+                public int ClientId { get; set; } = 1;
+                public bool UsePaperTrading { get; set; } = true;
+                public int ConnectionTimeout { get; set; } = 30;
+                public int ReconnectAttempts { get; set; } = 3;
+                public int PaperTradingPort { get; set; } = 7497;
+                public int LiveTradingPort { get; set; } = 7496;
+                public string GatewayHost { get; set; } = "127.0.0.1";
+                public string TWSHost { get; set; } = "127.0.0.1";
+            }
 
 /// <summary>
 /// Risk management thresholds
