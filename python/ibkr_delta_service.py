@@ -41,110 +41,54 @@ class IBKRDeltaService:
             # Find the actual position in IBKR portfolio
             portfolio_items = self.ib.portfolio()
             matching_item = None
-            
             for item in portfolio_items:
                 if (hasattr(item.contract, 'symbol') and item.contract.symbol == symbol and
                     hasattr(item.contract, 'strike') and item.contract.strike == strike and
                     hasattr(item.contract, 'right') and item.contract.right == right):
                     matching_item = item
                     break
-            
             if not matching_item:
                 logger.warning(f"⚠️ Could not find position for {symbol} {strike} {right}")
                 return None
-            
             contract = matching_item.contract
             logger.info(f"🔍 Found position: {contract}")
-            
-            # Check if we can get Greeks directly from portfolio item
-            if hasattr(matching_item, 'modelGreeks') and matching_item.modelGreeks:
-                if hasattr(matching_item.modelGreeks, 'delta') and matching_item.modelGreeks.delta is not None:
-                    delta_value = float(matching_item.modelGreeks.delta)
-                    logger.info(f"✅ {symbol} {strike} {right}: LIVE delta from portfolio {delta_value:.3f}")
-                    return delta_value
-            
+
             # Request market data with Greeks
             logger.info(f"🔍 Requesting live Greeks for {symbol} {strike} {right}...")
-            
-            # Method 1: Request with generic tick types for Greeks
             ticker = self.ib.reqMktData(contract, '106', False, False)
-            
-            # Wait for Greeks to populate
-            max_wait = 15.0
-            wait_interval = 0.5
-            elapsed = 0
-            
-            while elapsed < max_wait:
-                await asyncio.sleep(wait_interval)
-                elapsed += wait_interval
-                
-                # Check if Greeks are available in modelGreeks
-                if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks:
-                    if hasattr(ticker.modelGreeks, 'delta') and ticker.modelGreeks.delta is not None:
-                        delta_value = float(ticker.modelGreeks.delta)
+            await asyncio.sleep(3.0)  # Wait for data to arrive
+
+            # 1️⃣ Priority: modelGreeks from ticker
+            if ticker.modelGreeks and ticker.modelGreeks.delta is not None:
+                self.ib.cancelMktData(contract)
+                logger.info(f"✅ {symbol} {strike} {right}: LIVE delta from ticker {ticker.modelGreeks.delta:.3f}")
+                return float(ticker.modelGreeks.delta)
+
+            # 2️⃣ Check generic tick type 23 (Delta)
+            for tick in getattr(ticker, "ticks", []):
+                if getattr(tick, "tickType", None) == 23:
+                    self.ib.cancelMktData(contract)
+                    logger.info(f"✅ {symbol} {strike} {right}: LIVE delta from tickType 23 {tick.price:.3f}")
+                    return float(tick.price)
+
+            # 3️⃣ Check optionComputation
+            if hasattr(ticker, "optionComputation") and ticker.optionComputation:
+                for comp in ticker.optionComputation:
+                    if comp and getattr(comp, "delta", None) is not None:
                         self.ib.cancelMktData(contract)
-                        logger.info(f"✅ {symbol} {strike} {right}: LIVE delta {delta_value:.3f}")
-                        return delta_value
-                
-                # Check for generic tick data (tick type 23 = Delta)
-                if hasattr(ticker, 'genericTicks') and ticker.genericTicks:
-                    for tick in ticker.genericTicks:
-                        if tick.tickType == 23:  # Delta
-                            delta_value = float(tick.value)
-                            self.ib.cancelMktData(contract)
-                            logger.info(f"✅ {symbol} {strike} {right}: LIVE delta {delta_value:.3f}")
-                            return delta_value
-                
-                # Check for option computation tick data
-                if hasattr(ticker, 'optionComputation') and ticker.optionComputation:
-                    for comp in ticker.optionComputation:
-                        if hasattr(comp, 'delta') and comp.delta is not None:
-                            delta_value = float(comp.delta)
-                            self.ib.cancelMktData(contract)
-                            logger.info(f"✅ {symbol} {strike} {right}: LIVE delta {delta_value:.3f}")
-                            return delta_value
-            
-            # Timeout - try alternative method with different tick types
+                        logger.info(f"✅ {symbol} {strike} {right}: LIVE delta from optionComputation {comp.delta:.3f}")
+                        return float(comp.delta)
+
+            # 4️⃣ As a last resort: portfolio snapshot (if held, match by conId)
+            for item in self.ib.portfolio():
+                if hasattr(item.contract, 'conId') and item.contract.conId == contract.conId and item.modelGreeks and item.modelGreeks.delta is not None:
+                    self.ib.cancelMktData(contract)
+                    logger.info(f"✅ {symbol} {strike} {right}: LIVE delta from portfolio snapshot {item.modelGreeks.delta:.3f}")
+                    return float(item.modelGreeks.delta)
+
             self.ib.cancelMktData(contract)
-            logger.warning(f"⚠️ Timeout getting Greeks for {symbol} {strike} {right}, trying alternative method...")
-            
-            # Method 2: Try with different tick types
-            try:
-                ticker2 = self.ib.reqMktData(contract, '23', False, False)
-                await asyncio.sleep(3)
-                
-                if hasattr(ticker2, 'genericTicks') and ticker2.genericTicks:
-                    for tick in ticker2.genericTicks:
-                        if tick.tickType == 23:  # Delta
-                            delta_value = float(tick.value)
-                            self.ib.cancelMktData(contract)
-                            logger.info(f"✅ {symbol} {strike} {right}: LIVE delta (alt method) {delta_value:.3f}")
-                            return delta_value
-                
-                self.ib.cancelMktData(contract)
-            except Exception as e:
-                logger.warning(f"⚠️ Alternative method failed: {e}")
-            
-            # Method 3: Try with specific Greeks tick types
-            try:
-                ticker3 = self.ib.reqMktData(contract, '24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50', False, False)
-                await asyncio.sleep(3)
-                
-                if hasattr(ticker3, 'genericTicks') and ticker3.genericTicks:
-                    for tick in ticker3.genericTicks:
-                        if tick.tickType == 23:  # Delta
-                            delta_value = float(tick.value)
-                            self.ib.cancelMktData(contract)
-                            logger.info(f"✅ {symbol} {strike} {right}: LIVE delta (method 3) {delta_value:.3f}")
-                            return delta_value
-                
-                self.ib.cancelMktData(contract)
-            except Exception as e:
-                logger.warning(f"⚠️ Method 3 failed: {e}")
-            
             logger.warning(f"⚠️ Could not get live delta for {symbol} {strike} {right}")
             return None
-            
         except Exception as e:
             logger.error(f"❌ Error getting delta for {symbol} {strike} {right}: {e}")
             return None
@@ -182,14 +126,16 @@ class IBKRDeltaService:
                         logger.warning(f"⚠️ Could not parse expiry {expiry} for {symbol}")
                         continue
                 
-                # Get live delta - ONLY use live deltas, no fallback
+                # Get live delta - fall back to smart estimate if live data unavailable
                 live_delta = await self.get_live_delta(symbol, strike, expiry, right)
                 if live_delta is not None:
                     delta_cache[symbol] = live_delta
                     logger.info(f"✅ {symbol}: Using LIVE delta {live_delta:.3f}")
                 else:
-                    logger.error(f"❌ Could not get live delta for {symbol} - SKIPPING")
-                    continue
+                    logger.warning(f"⚠️ Could not get live delta for {symbol}, using estimate")
+                    estimated_delta = self._calculate_smart_delta(symbol, strike, expiry, right)
+                    delta_cache[symbol] = estimated_delta
+                    logger.info(f"🧮 {symbol}: Using ESTIMATED delta {estimated_delta:.3f}")
             
             # Save to cache file
             with open(self.cache_file, 'w') as f:

@@ -65,7 +65,7 @@ def main():
         processes['flask_app'] = start_flask_app()
         
         print("\n🎉 Both services started successfully!")
-        print("📊 Dashboard available at: http://localhost:7001")
+        print("📊 Dashboard available at: http://localhost:7002")
         print("📈 Delta service running in background")
         print("\nPress Ctrl+C to stop all services")
         

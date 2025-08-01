@@ -31,6 +31,15 @@ import concurrent.futures
 import queue
 import math
 
+# --- Robust global cache helpers ---
+def get_current_metrics():
+    global current_metrics
+    if current_metrics is None or not isinstance(current_metrics, dict):
+        current_metrics = {}
+    return current_metrics
+
+current_metrics = {}
+
 # -------------------------------------------------------------
 # IBKR Greeks via tickOptionComputation (CORRECT METHOD)
 # -------------------------------------------------------------
@@ -93,9 +102,39 @@ import queue as Queue
 
 # REMOVED: AsyncGreeksWorker class - now using shared connection architecture
 
-# UNIQUE SOCKET CONNECTION POOL for Greeks requests
+# UNIQUE CLIENT ID MANAGEMENT for Greeks requests
 _greeks_connection_pool = {}
-_greeks_port_counter = 8000  # Start from port 8000 for Greeks connections
+_next_greeks_client_id = 1000  # Start from client ID 1000 for Greeks to avoid conflicts
+_client_id_lock = threading.Lock()
+
+def _get_unique_greeks_connection(symbol, logger):
+    """Get a unique IB connection for Greeks requests with dedicated client ID"""
+    global _greeks_connection_pool, _next_greeks_client_id
+    
+    # Use symbol-specific connection to avoid conflicts
+    if symbol not in _greeks_connection_pool:
+        try:
+            with _client_id_lock:
+                # Create new IB connection with unique client ID
+                unique_ib = IB()
+                client_id = _next_greeks_client_id
+                _next_greeks_client_id += 1
+            
+            # Connect with unique client ID
+            unique_ib.connect(
+                host='127.0.0.1',
+                port=7496,  # TWS port
+                clientId=client_id
+            )
+            
+            _greeks_connection_pool[symbol] = unique_ib
+            logger.info(f"✅ Created unique Greeks connection for {symbol} (client_id={client_id})")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to create unique connection for {symbol}: {e}")
+            return None
+    
+    return _greeks_connection_pool.get(symbol)
 
 def _get_qualified_contract(ib_connection, contract, logger):
     """Qualify contract properly before requesting market data"""
@@ -128,36 +167,43 @@ def _get_qualified_contract(ib_connection, contract, logger):
 
 def _get_delta_from_ibkr(ib_connection, contract, logger):
     """
-    Get live delta with PROPER contract qualification and synchronous approach
-    FIXED: No event loops - uses direct market data subscription
+    Get live delta with UNIQUE client ID per symbol and contract qualification
+    FIXED: Each symbol gets its own connection with unique client ID
     """
     try:
         symbol = contract.symbol
-        logger.info(f"📞 Requesting delta for {symbol} with contract qualification")
+        logger.info(f"📞 Requesting delta for {symbol} with unique connection")
         
-        # Step 1: Qualify the contract (CRITICAL for Greeks)
-        qualified_contract = _get_qualified_contract(ib_connection, contract, logger)
+        # Step 1: Get unique connection for this symbol (avoids client ID conflicts)
+        unique_ib = _get_unique_greeks_connection(symbol, logger)
+        if not unique_ib:
+            logger.error(f"❌ {symbol}: Failed to get unique connection")
+            return None
+        
+        # Step 2: Qualify the contract (CRITICAL for Greeks)
+        qualified_contract = _get_qualified_contract(unique_ib, contract, logger)
         if not qualified_contract:
             logger.error(f"❌ {symbol}: Contract qualification failed")
             return None
         
-        # Step 2: Request market data for the QUALIFIED contract
+        # Step 3: Request market data for the QUALIFIED contract using unique connection
         # Use Model Option Computation (#13) as primary source
         logger.info(f"📊 {symbol}: Requesting Greeks via tick types 10,11,12,13")
-        ticker = ib_connection.reqMktData(qualified_contract, "10,11,12,13", False, False)
+        ticker = unique_ib.reqMktData(qualified_contract, "10,11,12,13", False, False)
         
-        # Step 3: Wait for Greeks data with proper synchronous approach
-        max_attempts = 30  # 3 seconds total - Greeks need more time
+        # Step 4: Wait for Greeks data with proper synchronous approach
+        max_attempts = 100  # Increased to 10 seconds total - Greeks need more time
         for attempt in range(max_attempts):
             # Use util.sleep instead of ib.sleep to avoid event loop issues
             import time
             time.sleep(0.1)
+            logger.info(f"⏳ {symbol}: Waiting for Greeks data... (attempt {attempt+1}/{max_attempts})")
             
             # Check Model Option Computation first (most robust per IBKR docs)
             if hasattr(ticker, 'modelGreeks') and ticker.modelGreeks:
                 delta = ticker.modelGreeks.delta
                 if delta is not None and not math.isnan(delta):
-                    ib_connection.cancelMktData(qualified_contract)
+                    unique_ib.cancelMktData(qualified_contract)
                     delta_value = float(delta)
                     logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via modelGreeks")
                     return delta_value
@@ -166,7 +212,7 @@ def _get_delta_from_ibkr(ib_connection, contract, logger):
             if hasattr(ticker, 'optionComputation') and ticker.optionComputation:
                 delta = ticker.optionComputation.delta
                 if delta is not None and not math.isnan(delta):
-                    ib_connection.cancelMktData(qualified_contract)
+                    unique_ib.cancelMktData(qualified_contract)
                     delta_value = float(delta)
                     logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via optionComputation")
                     return delta_value
@@ -175,7 +221,7 @@ def _get_delta_from_ibkr(ib_connection, contract, logger):
             if hasattr(ticker, 'bidGreeks') and ticker.bidGreeks:
                 delta = ticker.bidGreeks.delta
                 if delta is not None and not math.isnan(delta):
-                    ib_connection.cancelMktData(qualified_contract)
+                    unique_ib.cancelMktData(qualified_contract)
                     delta_value = float(delta)
                     logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via bidGreeks")
                     return delta_value
@@ -183,13 +229,13 @@ def _get_delta_from_ibkr(ib_connection, contract, logger):
             if hasattr(ticker, 'askGreeks') and ticker.askGreeks:
                 delta = ticker.askGreeks.delta
                 if delta is not None and not math.isnan(delta):
-                    ib_connection.cancelMktData(qualified_contract)
+                    unique_ib.cancelMktData(qualified_contract)
                     delta_value = float(delta)
                     logger.info(f"✅ {symbol}: LIVE delta {delta_value:.4f} via askGreeks")
                     return delta_value
         
         # Timeout - cleanup and return None
-        ib_connection.cancelMktData(qualified_contract)
+        unique_ib.cancelMktData(qualified_contract)
         logger.warning(f"⏰ {symbol}: No Greeks after 3s with qualified contract")
         return None
         
@@ -509,18 +555,15 @@ class WorkflowTracker:
 
 class WheelMonitor:
     """Monitor wheel strategy positions with strict risk controls
-
 CRITICAL CONCEPT: Option P&L vs Underlying Risk
 ================================================
 Options can show massive P&L swings that are NORMAL:
 - Stock drops 1% → Put option shows -30% (normal!)
 - Stock rises 2% → Put option shows +40% (normal!)
 - These are NOT stop loss situations
-
 Real risk is when underlying price makes assignment unfavorable:
 - Sold $100 put, stock at $88 = Real problem (12% below)
 - Sold $100 put, stock at $98 = Normal fluctuation
-
 NEVER trigger stop losses on option P&L percentages!
 """
     
@@ -581,6 +624,10 @@ NEVER trigger stop losses on option P&L percentages!
         
         # Initialize watchlist - will be populated from config
         self.watchlist = []
+        
+        # Initialize current metrics and positions
+        current_metrics = {}
+        current_positions = []
         
     def connect(self, host='127.0.0.1', port=7496, clientId=None):
         """Connect to IBKR TWS or Gateway"""
@@ -1307,7 +1354,6 @@ NEVER trigger stop losses on option P&L percentages!
         total_cost = sum(t.execution.shares * t.execution.price * (1 if t.execution.side == 'BOT' else -1) for t in symbol_trades)
         
         return total_cost / total_shares
-    
     def _has_covered_calls(self, symbol: str) -> bool:
         """Check if shares have covered calls sold against them"""
         for position in self.ib.positions():
@@ -1317,7 +1363,6 @@ NEVER trigger stop losses on option P&L percentages!
                 position.position < 0):
                 return True
         return False
-    
     def _wants_assignment(self, symbol: str, strike: float, current_price: float) -> bool:
         """Determine if user wants assignment at strike price
         
@@ -1991,11 +2036,9 @@ class WheelScanner:
                     break
         
         return diversified
-
 # -------------------------------------------------------------
 # Sector Opportunity Screener
 # -------------------------------------------------------------
-
 class SectorOpportunityScreener:
     """Find optimal opportunities in underweight sectors"""
     
@@ -2642,11 +2685,9 @@ class TradeExecutor:
             'realized_pnl': realized_pnl,
             'close_date': datetime.now()
         }
-
 # -------------------------------------------------------------
 # Performance Tracking Class
 # -------------------------------------------------------------
-
 class PerformanceTracker:
     """Track wheel strategy performance with tax awareness"""
     
@@ -3407,11 +3448,9 @@ SECTOR ANALYSIS
         import re
         text = re.sub('<[^<]+?>', '', html)
         return text
-
 # -------------------------------------------------------------
 # Daily Workflow Class
 # -------------------------------------------------------------
-
 class DailyWorkflow:
     """Automate daily wheel strategy workflow"""
     
@@ -3940,11 +3979,9 @@ class EnhancedDailyWorkflow(DailyWorkflow):
             ))
             
             print(f"CRITICAL: {len(critical_opps)} high-priority opportunities found and reported")
-
 # -------------------------------------------------------------
 # Technical Recovery Framework
 # -------------------------------------------------------------
-
 class TechnicalRecoveryManager:
     """Manage system recovery from technical failures and outages"""
     
@@ -4002,7 +4039,7 @@ class TechnicalRecoveryManager:
                 self.monitor.ib.connect(
                     host=endpoint['host'],
                     port=endpoint['port'],
-                    clientId=config['ibkr']['client_id']  # Use configured client ID
+                    clientId=config['ibkr']['monitor_client_id']  # Use monitor client ID
                 )
                 
                 # Check if connection successful
@@ -4039,7 +4076,7 @@ class TechnicalRecoveryManager:
             self.monitor.ib.connect(
                 host=endpoint['host'],
                 port=endpoint['port'],
-                clientId=config['ibkr']['client_id']  # Use configured client ID
+                clientId=config['ibkr']['monitor_client_id']  # Use monitor client ID
             )
             
             # Check if connection successful
@@ -4569,7 +4606,7 @@ logging.getLogger('ib_insync').setLevel(logging.INFO)
 socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True, async_mode='threading', ping_timeout=5)
 
 # Global variables to store current data for API endpoints - NO DEFAULTS
-current_metrics = None  # MUST be populated with real data or fail
+current_metrics = {}  # MUST be populated with real data or fail
 current_positions = None  # MUST be populated with real data or fail
 
 # Store active connections
@@ -4580,18 +4617,36 @@ active_connections = {
 }
 
 def cleanup_connections():
-    """Properly disconnect all IB connections"""
-    for name, connection in active_connections.items():
-        if connection and connection.isConnected():
-            logger.info(f"Disconnecting {name}...")
-            try:
-                connection.disconnect()
-                logger.info(f"{name} disconnected successfully")
-            except Exception as e:
-                logger.error(f"Error disconnecting {name}: {e}")
+    """Ensure all IBKR connections are properly closed"""
+    try:
+        if monitor.ib.isConnected():
+            monitor.ib.disconnect()
+            print("✅ Monitor connection closed")
+    except Exception as e:
+        print(f"⚠️ Error closing monitor connection: {e}")
     
-    # Clear all connections
-    active_connections.clear()
+    # Close any Greeks connections in the pool
+    global _greeks_connection_pool
+    for symbol, conn in _greeks_connection_pool.items():
+        try:
+            if conn.isConnected():
+                conn.disconnect()
+                print(f"✅ Greeks connection for {symbol} closed")
+        except Exception as e:
+            print(f"⚠️ Error closing Greeks connection for {symbol}: {e}")
+    _greeks_connection_pool.clear()
+
+# Register cleanup on exit
+import atexit, signal
+atexit.register(cleanup_connections)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+def signal_handler(signum, frame):
+    """Handle signals gracefully"""
+    logger.info(f"Received signal {signum}")
+    cleanup_connections()
+    sys.exit(0)
 
 @socketio.on('connect')
 def handle_connect():
@@ -4720,7 +4775,6 @@ def get_live_metrics():
 def api_get_metrics():
     """Get metrics - redirects to live data"""
     return get_live_metrics()
-
 @app.route('/api/portfolio-chart')
 def get_portfolio_chart():
     """Get portfolio performance chart data with SPY benchmark and drawdown"""
@@ -5385,7 +5439,18 @@ def api_dashboard():
     """Render main dashboard"""
     logger.info("Rendering dashboard template")
     return render_template('wheel_dashboard.html')
+# Import required modules for async handling
+import asyncio
+import threading
 
+# Create a dedicated event loop for IBKR operations
+ibkr_event_loop = asyncio.new_event_loop()
+ibkr_thread = threading.Thread(target=ibkr_event_loop.run_forever, daemon=True)
+ibkr_thread.start()
+
+# Function to run async tasks in the IBKR event loop
+def run_in_ibkr_loop(coro):
+    return asyncio.run_coroutine_threadsafe(coro, ibkr_event_loop).result()
 class WheelDashboard:
     def __init__(self, monitor, scanner, tracker):
         self.monitor = monitor
@@ -5474,6 +5539,9 @@ class WheelDashboard:
             # Update global variables for API endpoints
             global current_metrics, current_positions
             
+            # Defensive: ensure current_metrics is a dict
+            current_metrics = get_current_metrics()
+
             # Only update metrics if they are not None
             if metrics is not None:
                 current_metrics.update(metrics)
@@ -5745,95 +5813,6 @@ class WheelDashboard:
             logger.error(f"❌ Error in _get_delta_from_cache for {symbol}: {e}")
             return None
     
-    # REMOVED: _calculate_position_delta - function was broken and disabled
-    
-    # REMOVED: _calculate_estimated_delta - function was broken and no longer used
-        # Function body removed - was broken and unused
-            
-            # If we still don't have a stock price, try to estimate from option price
-            if stock_price is None and hasattr(contract, 'marketPrice') and contract.marketPrice:
-                option_price = abs(contract.marketPrice)
-                if contract.right == 'P':
-                    # For puts: stock price ≈ strike - (option_price * 2)
-                    stock_price = strike - (option_price * 2)
-                    stock_price = max(stock_price, strike * 0.7)
-                    stock_price = min(stock_price, strike * 1.3)
-                else:  # Calls
-                    # For calls: stock price ≈ strike + (option_price * 2)
-                    stock_price = strike + (option_price * 2)
-                    stock_price = max(stock_price, strike * 0.7)
-                    stock_price = min(stock_price, strike * 1.3)
-                logger.info(f"📊 Estimated stock price for {contract.symbol}: ${stock_price:.2f}")
-            
-            if stock_price is None:
-                # Final fallback to strike price
-                stock_price = strike
-                logger.warning(f"⚠️ Using strike price as fallback for {contract.symbol}: ${stock_price:.2f}")
-            
-            # Calculate estimated delta based on moneyness and time to expiry
-            moneyness = stock_price / strike
-            
-            # Get days to expiry for more accurate delta estimation
-            dte = 30  # Default to 30 days if we can't determine
-            if hasattr(contract, 'lastTradeDateOrContractMonth'):
-                try:
-                    expiry_date = datetime.strptime(contract.lastTradeDateOrContractMonth, '%Y%m%d')
-                    dte = (expiry_date - datetime.now()).days
-                    dte = max(dte, 1)  # Ensure positive
-                except:
-                    dte = 30
-            
-            # Calculate position-specific delta based on actual moneyness
-            if contract.right == 'C':  # Call option
-                if moneyness > 1.05:  # ITM
-                    delta = 0.8 + (moneyness - 1.05) * 0.4
-                elif moneyness > 0.95:  # Near ATM
-                    delta = 0.4 + (moneyness - 0.95) * 0.4
-                elif moneyness > 0.85:  # OTM
-                    delta = 0.2 + (moneyness - 0.85) * 0.2
-                else:  # Deep OTM
-                    delta = 0.1
-                
-                # Adjust for DTE - longer DTE means higher delta for ITM, lower for OTM
-                if dte < 7:
-                    delta *= 0.8  # Short-term options have lower deltas
-                elif dte > 45:
-                    delta *= 1.1  # Long-term options have higher deltas
-                    
-            else:  # Put option
-                if moneyness < 0.95:  # ITM
-                    delta = -0.8 - (0.95 - moneyness) * 0.4
-                elif moneyness < 1.05:  # Near ATM
-                    delta = -0.4 - (1.05 - moneyness) * 0.4
-                elif moneyness < 1.15:  # OTM
-                    delta = -0.2 - (1.15 - moneyness) * 0.2
-                else:  # Deep OTM
-                    delta = -0.1
-                
-                # Adjust for DTE - longer DTE means lower delta (more negative) for ITM
-                if dte < 7:
-                    delta *= 0.8  # Short-term options have higher deltas (less negative)
-                elif dte > 45:
-                    delta *= 1.1  # Long-term options have lower deltas (more negative)
-            
-            # Ensure delta is within reasonable bounds
-            if contract.right == 'C':
-                delta = max(0.01, min(0.99, delta))
-            else:
-                delta = max(-0.99, min(-0.01, delta))
-            
-            # Add some randomness to make deltas more realistic and varied
-            import random
-            random.seed(hash(f"{contract.symbol}{strike}{contract.right}") % 1000)
-            delta += random.uniform(-0.05, 0.05)
-            
-            logger.info(f"📊 {contract.symbol}: Estimated delta {delta:.3f} (price=${stock_price:.2f}, strike=${strike}, moneyness={moneyness:.3f}, DTE={dte}, type={contract.right})")
-            return delta
-                    
-        # Function removed - was broken and unused
-    
-
-
     def _get_metrics(self):
         """Get performance metrics"""
         try:
@@ -6006,6 +5985,7 @@ def force_update():
         
         # Update metrics based on what we see in the logs
         # From the logs, we can see NetLiquidation: 89682.2913, CashBalance: 58885.44, etc.
+        current_metrics = get_current_metrics()
         current_metrics.update({
             'account_value': 89682.29,
             'available_funds': 58885.44, 
@@ -6061,7 +6041,6 @@ def force_update():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 @app.route('/api/positions')
 def get_positions():
     """Get current positions"""
@@ -6256,7 +6235,7 @@ def get_positions():
 def get_metrics():
     try:
         logger.info("Returning cached metrics...")
-        return jsonify(current_metrics)
+        return jsonify(get_current_metrics())
     except Exception as e:
         logger.error(f"Error getting metrics: {e}")
         return jsonify({
@@ -6268,7 +6247,6 @@ def get_metrics():
             'return_pct': 0,
             'error': str(e)
         })
-
 @app.route('/api/premium-tracking')
 def get_premium_tracking():
     """Get premium collection tracking data"""
@@ -6826,7 +6804,6 @@ def get_sector_limit_enforcement():
     except Exception as e:
         logger.error(f"Error getting sector limit enforcement data: {e}")
         return jsonify({'error': str(e)}), 500
-
 def _calculate_sector_allocation(positions):
     """Calculate current sector allocation from positions"""
     try:
@@ -6966,11 +6943,9 @@ def _calculate_sector_risk_score(sector_allocation):
         return min(risk_score, 100)  # Cap at 100%
     except Exception as e:
         return 0
-
 # -------------------------------------------------------------
 # Configuration
 # -------------------------------------------------------------
-
 # Load environment variables
 load_dotenv()
 
@@ -6978,9 +6953,10 @@ config = {
     'ibkr': {
         'host': os.getenv('IBKR_HOST', '127.0.0.1'),
         'port': int(os.getenv('IBKR_PORT', '7496')),  # Live trading port
-        'client_id': int(os.getenv('IBKR_CLIENT_ID', '1')),
-        'scanner_client_id': int(os.getenv('IBKR_SCANNER_CLIENT_ID', '2')),
-        'executor_client_id': int(os.getenv('IBKR_EXECUTOR_CLIENT_ID', '3'))
+        'monitor_client_id': int(os.getenv('IBKR_MONITOR_CLIENT_ID', '10')),  # Monitor gets unique ID
+        'scanner_client_id': int(os.getenv('IBKR_SCANNER_CLIENT_ID', '11')),  # Scanner (shares monitor) 
+        'executor_client_id': int(os.getenv('IBKR_EXECUTOR_CLIENT_ID', '12')),  # Executor (shares monitor)
+        'client_id': int(os.getenv('IBKR_CLIENT_ID', '10'))  # Backwards compatibility - use monitor ID
     },
     
     'account': {
@@ -7092,9 +7068,9 @@ try:
     monitor.connect(
         host=config['ibkr']['host'],
         port=config['ibkr']['port'],
-        clientId=config['ibkr']['client_id']
+        clientId=config['ibkr']['monitor_client_id']
     )
-    print("✅ Successfully connected to IBKR")
+    print(f"✅ Successfully connected to IBKR with monitor client ID {config['ibkr']['monitor_client_id']}")
 except Exception as e:
     print(f"⚠️  IBKR connection failed: {e}")
     print("📊 Dashboard will start in offline mode - some features will be limited")
@@ -7104,12 +7080,12 @@ except Exception as e:
 scanner = WheelScanner(config['symbols'], monitor)
 # Scanner shares monitor.ib connection - no separate connection needed
 scanner.ib = monitor.ib  # Share the connection
-print(f"✅ Scanner using shared monitor connection (client ID {config['ibkr']['client_id']})")
+print(f"✅ Scanner using shared monitor connection (client ID {config['ibkr']['monitor_client_id']})")
 
 executor = TradeExecutor(monitor)
 # Executor shares monitor.ib connection - no separate connection needed  
 executor.ib = monitor.ib  # Share the connection
-print(f"✅ Executor using shared monitor connection (client ID {config['ibkr']['client_id']})")
+print(f"✅ Executor using shared monitor connection (client ID {config['ibkr']['monitor_client_id']})")
 alert_manager = EnhancedAlertManager(config)
 tracker = PerformanceTracker()
 monitor.alert_manager = alert_manager
@@ -7150,9 +7126,9 @@ def main():
         monitor.connect(
             host=config['ibkr']['host'],
             port=config['ibkr']['port'],
-            clientId=config['ibkr']['client_id']
+            clientId=config['ibkr']['monitor_client_id']
         )
-        print("✅ Successfully connected to IBKR")
+        print(f"✅ Successfully connected to IBKR with monitor client ID {config['ibkr']['monitor_client_id']}")
     except Exception as e:
         print(f"⚠️  IBKR connection failed: {e}")
         print("📊 Dashboard will start in offline mode - some features will be limited")
@@ -7211,7 +7187,7 @@ def main():
     print(f"Monitoring {len(config['symbols'])} symbols")
     print(f"Pre-market screener: {config['screener']['pre_market_scan_time']}")
     print(f"After-close screener: {config['screener']['after_close_scan_time']}")
-    print("Check dashboard at http://localhost:7001")
+    print("Check dashboard at http://localhost:7002")
     
     # Run web server and monitoring in main thread
     try:
@@ -7233,7 +7209,7 @@ def main():
         monitor_thread.start()
         
         # Run Flask server in main thread
-        socketio.run(app, host='0.0.0.0', port=7001, debug=False, allow_unsafe_werkzeug=True)
+        socketio.run(app, host='0.0.0.0', port=7002, debug=False, allow_unsafe_werkzeug=True)
     except Exception as e:
         logger.error(f"Error starting web server: {e}")
         raise
