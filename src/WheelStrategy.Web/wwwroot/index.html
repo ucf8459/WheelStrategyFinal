@@ -506,7 +506,7 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:7001/api/dashboard';
+        const API_BASE = 'http://localhost:5000/api/dashboard';
         
         function updateConnectionStatus(status, message) {
             const statusEl = document.getElementById('system-status-text');
@@ -577,51 +577,136 @@
         }
 
         async function updatePositions() {
+            console.log('Fetching positions...');
             const positions = await fetchData('/positions');
-            if (!positions) return;
+            console.log('Positions received:', positions);
+            if (!positions) {
+                console.log('No positions data received');
+                return;
+            }
 
             const tbody = document.getElementById('positions-tbody');
             tbody.innerHTML = '';
             
             if (positions.length === 0) {
+                console.log('Positions array is empty');
                 tbody.innerHTML = '<tr><td colspan="10" class="text-muted">No active positions</td></tr>';
                 return;
             }
             
+            console.log(`Processing ${positions.length} positions`);
             positions.forEach(pos => {
-                const tr = document.createElement('tr');
+                // Display stock position if shares owned
+                if (pos.sharesOwned > 0) {
+                    const tr = document.createElement('tr');
+                    const stockPrice = pos.stockPrice ? '$' + pos.stockPrice.toFixed(2) : '-';
+                    tr.innerHTML = `
+                        <td><strong>${pos.symbol}</strong></td>
+                        <td>STOCK</td>
+                        <td>${pos.sharesOwned}</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>${stockPrice}</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>1.00</td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" onclick="viewPosition('${pos.symbol}')">View</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                }
                 
-                // Calculate DTE color
-                const dteColor = pos.dte <= 7 ? 'red' : pos.dte <= 14 ? 'yellow' : 'white';
+                // Display each put strike separately
+                if (pos.putStrikes && pos.putStrikes.length > 0) {
+                    pos.putStrikes.forEach((strike, index) => {
+                        const quantity = pos.putQuantities && pos.putQuantities[index] ? pos.putQuantities[index] : 1;
+                        const expiry = pos.putExpiries && pos.putExpiries[index] ? pos.putExpiries[index] : '-';
+                        const dte = pos.putDTEs && pos.putDTEs[index] ? pos.putDTEs[index] : '-';
+                        const premium = pos.putPremiums && pos.putPremiums[index] ? '$' + pos.putPremiums[index].toFixed(2) : '-';
+                        const pnlPercent = pos.putPnLPercentages && pos.putPnLPercentages[index] ? pos.putPnLPercentages[index] : 0;
+                        const delta = pos.putDeltas && pos.putDeltas[index] ? pos.putDeltas[index] : 0;
+                        const stockPrice = pos.stockPrice ? '$' + pos.stockPrice.toFixed(2) : '-';
+                        
+                        // Calculate DTE color
+                        const dteColor = dte <= 7 ? 'red' : dte <= 14 ? 'yellow' : 'white';
+                        
+                        // Calculate delta risk
+                        const deltaRisk = Math.abs(delta) > 0.7 ? 'high' : Math.abs(delta) > 0.5 ? 'medium' : 'low';
+                        
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${pos.symbol}</strong></td>
+                            <td>PUT</td>
+                            <td>${quantity}</td>
+                            <td>$${strike.toFixed(2)}</td>
+                            <td>${expiry}</td>
+                            <td class="dte-${dteColor}">${dte}</td>
+                            <td>${stockPrice}</td>
+                            <td>${premium}</td>
+                            <td>
+                                <span class="badge ${pnlPercent >= 0 ? 'badge-success' : 'badge-warning'}">
+                                    ${pnlPercent > 0 ? '+' : ''}${pnlPercent.toFixed(1)}%
+                                </span>
+                            </td>
+                            <td>
+                                <span class="delta-${deltaRisk}">
+                                    ${delta.toFixed(2)}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="viewPosition('${pos.symbol}')">View</button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
                 
-                // Calculate delta risk
-                const delta = pos.estimatedDelta || 0;
-                const deltaRisk = Math.abs(delta) > 0.7 ? 'high' : Math.abs(delta) > 0.5 ? 'medium' : 'low';
-                
-                tr.innerHTML = `
-                    <td><strong>${pos.symbol}</strong></td>
-                    <td>${pos.sharesOwned > 0 ? 'STOCK' : 'PUT'}</td>
-                    <td>${pos.sharesOwned > 0 ? pos.sharesOwned : pos.putStrikes.length}</td>
-                    <td>${pos.putStrikes.length > 0 ? '$' + pos.putStrikes[0].toFixed(2) : '-'}</td>
-                    <td>${pos.expiry || '-'}</td>
-                    <td class="dte-${dteColor}">${pos.dte || '-'}</td>
-                    <td>${pos.stockPrice ? '$' + pos.stockPrice.toFixed(2) : '-'}</td>
-                    <td>${pos.totalCredits > 0 ? '$' + pos.totalCredits.toFixed(2) : '-'}</td>
-                    <td>
-                        <span class="badge ${pos.pnl >= 0 ? 'badge-success' : 'badge-warning'}">
-                            ${pos.pnl > 0 ? '+' : ''}${pos.pnl}%
-                        </span>
-                    </td>
-                    <td>
-                        <span class="delta-${deltaRisk}">
-                            ${delta.toFixed(2)}
-                        </span>
-                    </td>
-                    <td>
-                        <button class="btn btn-primary btn-sm" onclick="viewPosition('${pos.symbol}')">View</button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
+                // Display each call strike separately
+                if (pos.callStrikes && pos.callStrikes.length > 0) {
+                    pos.callStrikes.forEach((strike, index) => {
+                        const quantity = pos.callQuantities && pos.callQuantities[index] ? pos.callQuantities[index] : 1;
+                        const expiry = pos.callExpiries && pos.callExpiries[index] ? pos.callExpiries[index] : '-';
+                        const dte = pos.callDTEs && pos.callDTEs[index] ? pos.callDTEs[index] : '-';
+                        const premium = pos.callPremiums && pos.callPremiums[index] ? '$' + pos.callPremiums[index].toFixed(2) : '-';
+                        const pnlPercent = pos.callPnLPercentages && pos.callPnLPercentages[index] ? pos.callPnLPercentages[index] : 0;
+                        const delta = pos.callDeltas && pos.callDeltas[index] ? pos.callDeltas[index] : 0;
+                        const stockPrice = pos.stockPrice ? '$' + pos.stockPrice.toFixed(2) : '-';
+                        
+                        // Calculate DTE color
+                        const dteColor = dte <= 7 ? 'red' : dte <= 14 ? 'yellow' : 'white';
+                        
+                        // Calculate delta risk
+                        const deltaRisk = Math.abs(delta) > 0.7 ? 'high' : Math.abs(delta) > 0.5 ? 'medium' : 'low';
+                        
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${pos.symbol}</strong></td>
+                            <td>CALL</td>
+                            <td>${quantity}</td>
+                            <td>$${strike.toFixed(2)}</td>
+                            <td>${expiry}</td>
+                            <td class="dte-${dteColor}">${dte}</td>
+                            <td>${stockPrice}</td>
+                            <td>${premium}</td>
+                            <td>
+                                <span class="badge ${pnlPercent >= 0 ? 'badge-success' : 'badge-warning'}">
+                                    ${pnlPercent > 0 ? '+' : ''}${pnlPercent.toFixed(1)}%
+                                </span>
+                            </td>
+                            <td>
+                                <span class="delta-${deltaRisk}">
+                                    ${delta.toFixed(2)}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="viewPosition('${pos.symbol}')">View</button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
             });
         }
 

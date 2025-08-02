@@ -81,56 +81,103 @@ public class WheelMonitor : IWheelMonitor
         try
         {
             var positions = await _marketDataService.GetPositionsAsync();
+            _logger.LogInformation("Received {Count} positions from market data service", positions.Count);
+            
             var wheelPositions = new List<WheelPosition>();
             
-            // Group positions by symbol
+            // Group positions by symbol, strike, and right to handle multiple contracts
             var symbolGroups = positions
-                .Where(p => p["secType"].ToString() == "OPT" || p["secType"].ToString() == "STK")
-                .GroupBy(p => p["symbol"].ToString());
+                .Where(p => 
+                {
+                    var hasSecType = p.ContainsKey("secType");
+                    var secType = hasSecType ? p["secType"]?.ToString() : "MISSING";
+                    _logger.LogDebug("Position {Symbol}: secType={SecType}, hasSecType={HasSecType}", 
+                        p.GetValueOrDefault("symbol", "UNKNOWN"), secType, hasSecType);
+                    return p.ContainsKey("secType") && (p["secType"].ToString() == "OPT" || p["secType"].ToString() == "STK");
+                })
+                .GroupBy(p => new { 
+                    Symbol = p["symbol"].ToString(), 
+                    Strike = p.ContainsKey("strike") ? Convert.ToDecimal(p["strike"]) : 0m,
+                    Right = p.ContainsKey("right") ? p["right"].ToString() : "",
+                    SecType = p["secType"].ToString()
+                });
             
             foreach (var group in symbolGroups)
             {
-                var symbol = group.Key!;
-                var wheelPosition = new WheelPosition { Symbol = symbol };
-                
-                foreach (var position in group)
+                var symbol = group.Key.Symbol;
+                var wheelPosition = wheelPositions.FirstOrDefault(wp => wp.Symbol == symbol);
+                if (wheelPosition == null)
                 {
-                    var secType = position["secType"].ToString();
-                    var pos = Convert.ToInt32(position["position"]);
-                    
-                    if (secType == "OPT")
-                    {
-                        var strike = Convert.ToDecimal(position["strike"]);
-                        var right = position["right"].ToString();
-                        var marketValue = Convert.ToDecimal(position["marketValue"]);
-                        
-                        if (right == "P" && pos < 0) // Short put
-                        {
-                            wheelPosition.PutStrikes.Add(strike);
-                            wheelPosition.PutCredits.Add(Math.Abs(marketValue));
-                        }
-                        else if (right == "C" && pos < 0) // Short call
-                        {
-                            wheelPosition.CallStrikes ??= new List<decimal>();
-                            wheelPosition.CallStrikes.Add(strike);
-                            wheelPosition.CallCredits ??= new List<decimal>();
-                            wheelPosition.CallCredits.Add(Math.Abs(marketValue));
-                        }
-                    }
-                    else if (secType == "STK" && pos > 0)
-                    {
-                        wheelPosition.SharesOwned = pos;
-                        wheelPosition.AssignmentPrice = Convert.ToDecimal(position["avgCost"]);
-                    }
+                    wheelPosition = new WheelPosition { Symbol = symbol };
+                    wheelPositions.Add(wheelPosition);
                 }
                 
-                if (wheelPosition.HasActivePuts || wheelPosition.HasShares)
+                // Sum up all positions in this group (multiple contracts at same strike)
+                var totalPosition = group.Sum(p => Convert.ToInt32(p["position"]));
+                var totalMarketValue = group.Sum(p => Convert.ToDecimal(p["marketValue"]));
+                
+                _logger.LogDebug("Group {Symbol} {Strike} {Right} {SecType}: TotalPosition={TotalPosition}, TotalMarketValue={TotalMarketValue}", 
+                    symbol, group.Key.Strike, group.Key.Right, group.Key.SecType, totalPosition, totalMarketValue);
+                
+                if (group.Key.SecType == "OPT")
                 {
-                    wheelPositions.Add(wheelPosition);
+                    var strike = group.Key.Strike;
+                    var right = group.Key.Right;
+                    
+                    // Get market data for this option
+                    var expiry = group.First().GetValueOrDefault("expiry")?.ToString();
+                    var dte = group.First().GetValueOrDefault("dte") as int?;
+                    var premium = Convert.ToDecimal(group.First().GetValueOrDefault("premium", 0.0));
+                    var delta = Convert.ToDecimal(group.First().GetValueOrDefault("delta", 0.0));
+                    var pnlPercent = Convert.ToDecimal(group.First().GetValueOrDefault("pnlPercent", 0.0));
+                    
+                    if (right == "P" && totalPosition < 0) // Short put
+                    {
+                        wheelPosition.PutStrikes.Add(strike);
+                        wheelPosition.PutCredits.Add(Math.Abs(totalMarketValue));
+                        wheelPosition.PutQuantities.Add(totalPosition); // Keep negative for short positions
+                        wheelPosition.PutExpiries.Add(expiry ?? "");
+                        wheelPosition.PutDTEs.Add(dte ?? 0);
+                        wheelPosition.PutPremiums.Add(premium);
+                        wheelPosition.PutDeltas.Add(delta);
+                        wheelPosition.PutPnLPercentages.Add(pnlPercent);
+                        _logger.LogDebug("Added short put: {Symbol} {Strike} {Quantity} {Expiry} {DTE} {Premium} {Delta}", 
+                            symbol, strike, totalPosition, expiry, dte, premium, delta);
+                    }
+                    else if (right == "C" && totalPosition < 0) // Short call
+                    {
+                        wheelPosition.CallStrikes ??= new List<decimal>();
+                        wheelPosition.CallStrikes.Add(strike);
+                        wheelPosition.CallCredits ??= new List<decimal>();
+                        wheelPosition.CallCredits.Add(Math.Abs(totalMarketValue));
+                        wheelPosition.CallQuantities ??= new List<int>();
+                        wheelPosition.CallQuantities.Add(totalPosition); // Keep negative for short positions
+                        wheelPosition.CallExpiries ??= new List<string>();
+                        wheelPosition.CallExpiries.Add(expiry ?? "");
+                        wheelPosition.CallDTEs ??= new List<int>();
+                        wheelPosition.CallDTEs.Add(dte ?? 0);
+                        wheelPosition.CallPremiums ??= new List<decimal>();
+                        wheelPosition.CallPremiums.Add(premium);
+                        wheelPosition.CallDeltas ??= new List<decimal>();
+                        wheelPosition.CallDeltas.Add(delta);
+                        wheelPosition.CallPnLPercentages ??= new List<decimal>();
+                        wheelPosition.CallPnLPercentages.Add(pnlPercent);
+                        _logger.LogDebug("Added short call: {Symbol} {Strike} {Quantity} {Expiry} {DTE} {Premium} {Delta}", 
+                            symbol, strike, totalPosition, expiry, dte, premium, delta);
+                    }
+                }
+                else if (group.Key.SecType == "STK" && totalPosition > 0)
+                {
+                    wheelPosition.SharesOwned = totalPosition;
+                    wheelPosition.AssignmentPrice = group.Average(p => Convert.ToDecimal(p["avgCost"]));
+                    wheelPosition.StockPrice = Convert.ToDecimal(group.First().GetValueOrDefault("stockPrice", 0.0));
+                    _logger.LogDebug("Added stock position: {Symbol} {Shares} {StockPrice}", 
+                        symbol, totalPosition, wheelPosition.StockPrice);
                 }
             }
             
-            return wheelPositions;
+            // Filter to only include positions with active options or shares
+            return wheelPositions.Where(wp => wp.HasActivePuts || wp.HasShares || wp.HasActiveCalls).ToList();
         }
         catch (Exception ex)
         {

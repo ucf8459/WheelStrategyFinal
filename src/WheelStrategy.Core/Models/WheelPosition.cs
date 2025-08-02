@@ -10,10 +10,23 @@ public class WheelPosition
     public string Symbol { get; set; } = string.Empty;
     public List<decimal> PutStrikes { get; set; } = new();
     public List<decimal> PutCredits { get; set; } = new();
+    public List<int> PutQuantities { get; set; } = new(); // Track quantities for each put strike
+    public List<string> PutExpiries { get; set; } = new(); // Expiry dates for puts
+    public List<int> PutDTEs { get; set; } = new(); // Days to expiration for puts
+    public List<decimal> PutPremiums { get; set; } = new(); // Current premiums for puts
+    public List<decimal> PutDeltas { get; set; } = new(); // Delta values for puts
+    public List<decimal> PutPnLPercentages { get; set; } = new(); // P&L% for puts
     public decimal? AssignmentPrice { get; set; }
     public int SharesOwned { get; set; }
+    public decimal? StockPrice { get; set; } // Current stock price
     public List<decimal>? CallStrikes { get; set; }
     public List<decimal>? CallCredits { get; set; }
+    public List<int>? CallQuantities { get; set; } // Track quantities for each call strike
+    public List<string>? CallExpiries { get; set; } // Expiry dates for calls
+    public List<int>? CallDTEs { get; set; } // Days to expiration for calls
+    public List<decimal>? CallPremiums { get; set; } // Current premiums for calls
+    public List<decimal>? CallDeltas { get; set; } // Delta values for calls
+    public List<decimal>? CallPnLPercentages { get; set; } // P&L% for calls
     public decimal TotalCredits { get; set; }
     public decimal CostBasis { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

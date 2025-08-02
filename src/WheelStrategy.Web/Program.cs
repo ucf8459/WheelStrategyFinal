@@ -19,12 +19,19 @@ builder.Services.Configure<WheelStrategyOptions>(
     builder.Configuration.GetSection(WheelStrategyOptions.SectionName));
 
             // Register services
-            builder.Services.AddScoped<IMarketDataService, IBKRMarketDataService>(); // Using real IBKR data with AutoFinance.Broker
+            builder.Services.AddScoped<IMarketDataService, IBKRMarketDataService>(); // Using AutoFinance.Broker - it was working!
             builder.Services.AddScoped<ITradeExecutor, TradeExecutor>();
-            builder.Services.AddScoped<IBKRConnectionService>();
+            builder.Services.AddSingleton<IBKRConnectionService>(); // Changed to Singleton for persistent connection
             builder.Services.AddScoped<IWheelScanner, WheelScanner>();
             builder.Services.AddScoped<IWheelMonitor, WheelMonitor>();
             builder.Services.AddScoped<IAlertManager, AlertManager>();
+            
+            // Register HttpClient for IBKR Client Portal API (keeping for future use)
+            builder.Services.AddHttpClient<IBKRWebApiService>(client =>
+            {
+                client.BaseAddress = new Uri("https://localhost:5001/v1/portal/");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
 
 // Add CORS
 builder.Services.AddCors(options =>
