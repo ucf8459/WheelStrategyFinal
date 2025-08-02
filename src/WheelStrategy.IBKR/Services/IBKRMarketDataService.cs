@@ -16,6 +16,8 @@ public class IBKRMarketDataService : IMarketDataService
     private readonly WheelStrategyOptions _options;
     private readonly IBKRConnectionService _connectionService;
     private bool _isConnected = false;
+    private readonly Dictionary<string, Dictionary<string, object>> _marketDataCache = new();
+    private readonly object _cacheLock = new object();
 
     public IBKRMarketDataService(
         ILogger<IBKRMarketDataService> logger,
@@ -309,10 +311,9 @@ public class IBKRMarketDataService : IMarketDataService
                 SecType = "OPT",
                 Strike = (double)strike,
                 Right = right,
-                Exchange = "SMART",
+                Exchange = "SMART", // Use SMART for best execution
                 Currency = "USD",
-                Multiplier = "100", // Standard option multiplier
-                LocalSymbol = $"{symbol}   {expiry}{right}{strike:00000000}" // Create local symbol
+                Multiplier = "100" // Standard option multiplier
             };
 
             // Request market data using AutoFinance.Broker
@@ -321,30 +322,51 @@ public class IBKRMarketDataService : IMarketDataService
             
             _logger.LogInformation("Requested option data for {Symbol} {Strike} {Right} {Expiry} from IBKR", symbol, strike, right, expiry);
             
-            // For now, return sample data while we implement proper response handling
-            // In a real implementation, we would wait for market data callbacks
-            var random = new Random(symbol.GetHashCode() + strike.GetHashCode());
-            var basePrice = strike * 0.05m; // 5% of strike as base premium
-            var priceVariation = (decimal)(random.NextDouble() - 0.5) * basePrice * 0.2m; // ±10% variation
-            var currentPrice = basePrice + priceVariation;
+            // Wait for market data response (simplified - in production you'd implement proper callback handling)
+            await Task.Delay(1000); // Give time for market data to arrive
             
-            return new Dictionary<string, object>
+            // Check if we have cached data for this option
+            var cacheKey = $"{symbol}_{strike}_{right}_{expiry}";
+            lock (_cacheLock)
+            {
+                if (_marketDataCache.ContainsKey(cacheKey))
+                {
+                    var cachedData = _marketDataCache[cacheKey];
+                    _logger.LogInformation("Using cached option data for {Symbol} {Strike} {Right}", symbol, strike, right);
+                    return cachedData;
+                }
+            }
+            
+            // TODO: Implement proper market data callback handling to get real data
+            // For now, return empty data since we can't get real data from IBKR
+            _logger.LogWarning("Option data not available for {Symbol} {Strike} {Right} {Expiry} - returning empty data", symbol, strike, right, expiry);
+            
+            var result = new Dictionary<string, object>
             {
                 ["symbol"] = symbol,
                 ["strike"] = strike,
                 ["expiry"] = expiry,
                 ["right"] = right,
-                ["bid"] = (double)(currentPrice * 0.95m),
-                ["ask"] = (double)(currentPrice * 1.05m),
-                ["last"] = (double)currentPrice,
-                ["volume"] = random.Next(50, 500),
-                ["openInterest"] = random.Next(100, 2000),
-                ["impliedVolatility"] = 0.25 + random.NextDouble() * 0.3, // 25-55% IV
-                ["delta"] = right == "P" ? -0.3 - random.NextDouble() * 0.4 : 0.3 + random.NextDouble() * 0.4, // -0.7 to 0.7
-                ["gamma"] = 0.01 + random.NextDouble() * 0.02,
-                ["theta"] = -(0.1 + random.NextDouble() * 0.2),
-                ["vega"] = 0.1 + random.NextDouble() * 0.3
+                ["bid"] = 0.0,
+                ["ask"] = 0.0,
+                ["last"] = 0.0,
+                ["volume"] = 0,
+                ["openInterest"] = 0,
+                ["impliedVolatility"] = 0.0,
+                ["delta"] = 0.0,
+                ["gamma"] = 0.0,
+                ["theta"] = 0.0,
+                ["vega"] = 0.0,
+                ["stockPrice"] = 0.0
             };
+            
+            // Cache the result
+            lock (_cacheLock)
+            {
+                _marketDataCache[cacheKey] = result;
+            }
+            
+            return result;
         }
         catch (Exception ex)
         {
@@ -393,7 +415,7 @@ public class IBKRMarketDataService : IMarketDataService
             {
                 Symbol = symbol,
                 SecType = "STK",
-                Exchange = "SMART",
+                Exchange = "SMART", // Use SMART for best execution
                 Currency = "USD"
             };
 
@@ -403,18 +425,42 @@ public class IBKRMarketDataService : IMarketDataService
             
             _logger.LogInformation("Requested stock data for {Symbol} from IBKR", symbol);
             
-            // For now, return sample data while we implement proper response handling
-            // In a real implementation, we would wait for market data callbacks
-            return new Dictionary<string, object>
+            // Wait for market data response
+            await Task.Delay(1000); // Give time for market data to arrive
+            
+            // Check if we have cached data for this stock
+            lock (_cacheLock)
+            {
+                if (_marketDataCache.ContainsKey(symbol))
+                {
+                    var cachedData = _marketDataCache[symbol];
+                    _logger.LogInformation("Using cached stock data for {Symbol}", symbol);
+                    return cachedData;
+                }
+            }
+            
+            // TODO: Implement proper market data callback handling to get real data
+            // For now, return empty data since we can't get real data from IBKR
+            _logger.LogWarning("Stock data not available for {Symbol} - returning empty data", symbol);
+            
+            var result = new Dictionary<string, object>
             {
                 ["symbol"] = symbol,
-                ["last"] = 100.0, // Sample price
-                ["bid"] = 99.5,
-                ["ask"] = 100.5,
-                ["volume"] = 1000000,
-                ["high"] = 101.0,
-                ["low"] = 99.0
+                ["last"] = 0.0,
+                ["bid"] = 0.0,
+                ["ask"] = 0.0,
+                ["volume"] = 0,
+                ["high"] = 0.0,
+                ["low"] = 0.0
             };
+            
+            // Cache the result
+            lock (_cacheLock)
+            {
+                _marketDataCache[symbol] = result;
+            }
+            
+            return result;
         }
         catch (Exception ex)
         {
