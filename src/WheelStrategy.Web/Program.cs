@@ -19,7 +19,7 @@ builder.Services.Configure<WheelStrategyOptions>(
     builder.Configuration.GetSection(WheelStrategyOptions.SectionName));
 
             // Register services
-            builder.Services.AddScoped<IMarketDataService, IBKRMarketDataService>(); // Using AutoFinance.Broker - it was working!
+            builder.Services.AddScoped<IMarketDataService, IBKRTwsApiService>(); // Using official IBKR TWS API
             builder.Services.AddScoped<ITradeExecutor, TradeExecutor>();
             builder.Services.AddSingleton<IBKRConnectionService>(); // Changed to Singleton for persistent connection
             builder.Services.AddScoped<IWheelScanner, WheelScanner>();

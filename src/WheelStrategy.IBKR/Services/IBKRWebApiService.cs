@@ -269,44 +269,46 @@ public class IBKRWebApiService : IMarketDataService
                 }
             }
             
-            _logger.LogWarning("Could not retrieve option data from IBKR Client Portal API");
+            _logger.LogWarning("Could not retrieve option data from IBKR Client Portal API for {Symbol} {Strike} {Right} {Expiry} - returning empty data", 
+                symbol, strike, right, expiry);
             return new Dictionary<string, object>
             {
                 ["symbol"] = symbol,
                 ["strike"] = strike,
                 ["expiry"] = expiry,
                 ["right"] = right,
-                ["bid"] = 2.50,
-                ["ask"] = 2.60,
-                ["last"] = 2.55,
-                ["volume"] = 150,
-                ["openInterest"] = 1200,
-                ["impliedVolatility"] = 0.35,
-                ["delta"] = 0.45,
-                ["gamma"] = 0.02,
-                ["theta"] = -0.15,
-                ["vega"] = 0.25
+                ["bid"] = 0.0,
+                ["ask"] = 0.0,
+                ["last"] = 0.0,
+                ["volume"] = 0,
+                ["openInterest"] = 0,
+                ["impliedVolatility"] = 0.0,
+                ["delta"] = 0.0,
+                ["gamma"] = 0.0,
+                ["theta"] = 0.0,
+                ["vega"] = 0.0
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get option data from IBKR Client Portal API");
+            _logger.LogError(ex, "Failed to get option data from IBKR Client Portal API for {Symbol} {Strike} {Right} {Expiry}", 
+                symbol, strike, right, expiry);
             return new Dictionary<string, object>
             {
                 ["symbol"] = symbol,
                 ["strike"] = strike,
                 ["expiry"] = expiry,
                 ["right"] = right,
-                ["bid"] = 2.50,
-                ["ask"] = 2.60,
-                ["last"] = 2.55,
-                ["volume"] = 150,
-                ["openInterest"] = 1200,
-                ["impliedVolatility"] = 0.35,
-                ["delta"] = 0.45,
-                ["gamma"] = 0.02,
-                ["theta"] = -0.15,
-                ["vega"] = 0.25
+                ["bid"] = 0.0,
+                ["ask"] = 0.0,
+                ["last"] = 0.0,
+                ["volume"] = 0,
+                ["openInterest"] = 0,
+                ["impliedVolatility"] = 0.0,
+                ["delta"] = 0.0,
+                ["gamma"] = 0.0,
+                ["theta"] = 0.0,
+                ["vega"] = 0.0
             };
         }
     }
@@ -364,29 +366,29 @@ public class IBKRWebApiService : IMarketDataService
                 }
             }
             
-            _logger.LogWarning("Could not retrieve stock data from IBKR Client Portal API");
+            _logger.LogWarning("Could not retrieve stock data from IBKR Client Portal API for {Symbol} - returning empty data", symbol);
             return new Dictionary<string, object>
             {
                 ["symbol"] = symbol,
-                ["bid"] = 150.0,
-                ["ask"] = 150.1,
-                ["price"] = 150.05,
-                ["volume"] = 1000000,
-                ["marketCap"] = 1000000000,
+                ["bid"] = 0.0,
+                ["ask"] = 0.0,
+                ["price"] = 0.0,
+                ["volume"] = 0,
+                ["marketCap"] = 0.0,
                 ["IsSampleData"] = false
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get stock data from IBKR Client Portal API");
+            _logger.LogError(ex, "Failed to get stock data from IBKR Client Portal API for {Symbol}", symbol);
             return new Dictionary<string, object>
             {
                 ["symbol"] = symbol,
-                ["bid"] = 150.0,
-                ["ask"] = 150.1,
-                ["price"] = 150.05,
-                ["volume"] = 1000000,
-                ["marketCap"] = 1000000000,
+                ["bid"] = 0.0,
+                ["ask"] = 0.0,
+                ["price"] = 0.0,
+                ["volume"] = 0,
+                ["marketCap"] = 0.0,
                 ["IsSampleData"] = false
             };
         }

@@ -438,7 +438,7 @@
                                 <th>Stock Price</th>
                                 <th>Premium</th>
                                 <th>P&L %</th>
-                                <th>Delta</th>
+                                <th class="delta-column">Delta</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -600,6 +600,13 @@
                 if (pos.sharesOwned > 0) {
                     const tr = document.createElement('tr');
                     const stockPrice = pos.stockPrice ? '$' + pos.stockPrice.toFixed(2) : '-';
+                    
+                    // Calculate P&L% for stock position
+                    let pnlPercent = 0;
+                    if (pos.stockPrice && pos.assignmentPrice) {
+                        pnlPercent = ((pos.stockPrice - pos.assignmentPrice) / pos.assignmentPrice) * 100;
+                    }
+                    
                     tr.innerHTML = `
                         <td><strong>${pos.symbol}</strong></td>
                         <td>STOCK</td>
@@ -609,8 +616,12 @@
                         <td>-</td>
                         <td>${stockPrice}</td>
                         <td>-</td>
+                        <td>
+                            <span class="badge ${pnlPercent >= 0 ? 'badge-success' : 'badge-warning'}">
+                                ${pnlPercent > 0 ? '+' : ''}${pnlPercent.toFixed(1)}%
+                            </span>
+                        </td>
                         <td>-</td>
-                        <td>1.00</td>
                         <td>
                             <button class="btn btn-primary btn-sm" onclick="viewPosition('${pos.symbol}')">View</button>
                         </td>

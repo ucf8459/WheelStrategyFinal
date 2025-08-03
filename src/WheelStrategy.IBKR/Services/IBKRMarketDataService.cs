@@ -305,6 +305,7 @@ public class IBKRMarketDataService : IMarketDataService
             }
 
             // Create option contract using AutoFinance.Broker with all required fields
+            // Try using SMART exchange which should route to the best exchange
             var contract = new Contract
             {
                 Symbol = symbol,

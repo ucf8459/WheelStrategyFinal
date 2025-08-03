@@ -96,10 +96,10 @@ public class WheelMonitor : IWheelMonitor
                     return p.ContainsKey("secType") && (p["secType"].ToString() == "OPT" || p["secType"].ToString() == "STK");
                 })
                 .GroupBy(p => new { 
-                    Symbol = p["symbol"].ToString(), 
+                    Symbol = p.GetValueOrDefault("symbol", "UNKNOWN").ToString(), 
                     Strike = p.ContainsKey("strike") ? Convert.ToDecimal(p["strike"]) : 0m,
-                    Right = p.ContainsKey("right") ? p["right"].ToString() : "",
-                    SecType = p["secType"].ToString()
+                    Right = p.ContainsKey("right") ? p["right"]?.ToString() ?? "" : "",
+                    SecType = p.GetValueOrDefault("secType", "UNKNOWN").ToString()
                 });
             
             foreach (var group in symbolGroups)
