@@ -16,17 +16,20 @@ public class DashboardController : ControllerBase
     private readonly IWheelMonitor _wheelMonitor;
     private readonly IWheelScanner _wheelScanner;
     private readonly IAlertManager _alertManager;
+    private readonly IDecisionSupportService _decisionSupportService;
     
     public DashboardController(
         ILogger<DashboardController> logger,
         IWheelMonitor wheelMonitor,
         IWheelScanner wheelScanner,
-        IAlertManager alertManager)
+        IAlertManager alertManager,
+        IDecisionSupportService decisionSupportService)
     {
         _logger = logger;
         _wheelMonitor = wheelMonitor;
         _wheelScanner = wheelScanner;
         _alertManager = alertManager;
+        _decisionSupportService = decisionSupportService;
     }
     
     /// <summary>
@@ -172,4 +175,85 @@ public class DashboardController : ControllerBase
             return StatusCode(500, "Failed to get sector allocations");
         }
     }
+    
+    /// <summary>
+    /// Gets decision support summary
+    /// </summary>
+    [HttpGet("decision-support")]
+    public async Task<ActionResult<DecisionSupportSummary>> GetDecisionSupport()
+    {
+        try
+        {
+            var summary = await _decisionSupportService.GetDecisionSupportSummaryAsync();
+            return Ok(summary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get decision support summary");
+            return StatusCode(500, "Failed to get decision support summary");
+        }
+    }
+    
+    /// <summary>
+    /// Records a decision made today
+    /// </summary>
+    [HttpPost("record-decision")]
+    public async Task<ActionResult> RecordDecision([FromBody] RecordDecisionRequest request)
+    {
+        try
+        {
+            await _decisionSupportService.RecordDecisionAsync(request.Decision, request.Category);
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to record decision");
+            return StatusCode(500, "Failed to record decision");
+        }
+    }
+    
+    /// <summary>
+    /// Gets upcoming expirations within 7 days
+    /// </summary>
+    [HttpGet("upcoming-expirations")]
+    public async Task<ActionResult<List<UpcomingExpiration>>> GetUpcomingExpirations()
+    {
+        try
+        {
+            var expirations = await _decisionSupportService.GetUpcomingExpirationsAsync();
+            return Ok(expirations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get upcoming expirations");
+            return StatusCode(500, "Failed to get upcoming expirations");
+        }
+    }
+    
+    /// <summary>
+    /// Gets decisions used today
+    /// </summary>
+    [HttpGet("decisions-used-today")]
+    public async Task<ActionResult<int>> GetDecisionsUsedToday()
+    {
+        try
+        {
+            var count = await _decisionSupportService.GetDecisionsUsedTodayAsync();
+            return Ok(count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get decisions used today");
+            return StatusCode(500, "Failed to get decisions used today");
+        }
+    }
+}
+
+/// <summary>
+/// Request model for recording a decision
+/// </summary>
+public class RecordDecisionRequest
+{
+    public string Decision { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
 } 

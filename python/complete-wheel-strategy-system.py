@@ -4636,17 +4636,17 @@ def cleanup_connections():
             print(f"⚠️ Error closing Greeks connection for {symbol}: {e}")
     _greeks_connection_pool.clear()
 
-# Register cleanup on exit
-import atexit, signal
-atexit.register(cleanup_connections)
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-
 def signal_handler(signum, frame):
     """Handle signals gracefully"""
     logger.info(f"Received signal {signum}")
     cleanup_connections()
     sys.exit(0)
+
+# Register cleanup on exit
+import atexit, signal
+atexit.register(cleanup_connections)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 @socketio.on('connect')
 def handle_connect():
@@ -7095,12 +7095,6 @@ dashboard.start_monitoring()
 # -------------------------------------------------------------
 # Main Application
 # -------------------------------------------------------------
-
-def signal_handler(signum, frame):
-    """Handle signals gracefully"""
-    logger.info(f"Received signal {signum}")
-    cleanup_connections()
-    sys.exit(0)
 
 def main():
     # Initialize logging

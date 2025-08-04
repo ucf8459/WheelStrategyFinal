@@ -25,6 +25,7 @@ builder.Services.Configure<WheelStrategyOptions>(
             builder.Services.AddScoped<IWheelScanner, WheelScanner>();
             builder.Services.AddScoped<IWheelMonitor, WheelMonitor>();
             builder.Services.AddScoped<IAlertManager, AlertManager>();
+            builder.Services.AddScoped<IDecisionSupportService, DecisionSupportService>();
             
             // Register HttpClient for IBKR Client Portal API (keeping for future use)
             builder.Services.AddHttpClient<IBKRWebApiService>(client =>
