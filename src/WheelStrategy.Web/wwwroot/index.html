@@ -556,6 +556,75 @@
             background-color: var(--secondary);
             color: white;
         }
+        
+        /* Performance Chart Styles */
+        .performance-metrics {
+            margin-bottom: 1rem;
+        }
+        
+        .metric-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .metric-item {
+            text-align: center;
+            padding: 0.5rem;
+            background-color: var(--light);
+            border-radius: 4px;
+        }
+        
+        .metric-label {
+            display: block;
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+        
+        .chart-container {
+            margin: 1rem 0;
+            text-align: center;
+        }
+        
+        .performance-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .summary-item {
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 1rem;
+        }
+        
+        .summary-item h4 {
+            margin: 0 0 0.5rem 0;
+            color: var(--primary);
+            font-size: 0.9rem;
+        }
+        
+        .summary-content {
+            font-size: 0.8rem;
+        }
+        
+        .return-positive {
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        .return-negative {
+            color: var(--danger);
+            font-weight: bold;
+        }
+        
+        .return-neutral {
+            color: var(--secondary);
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -687,6 +756,57 @@
                             <h3 class="decision-title info">Information</h3>
                             <div id="info-decisions" class="decision-list">
                                 <div class="loading">Loading info decisions...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Portfolio Performance Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Portfolio Performance</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Live Data</span>
+                        </div>
+                    </div>
+                    
+                    <div class="performance-metrics">
+                        <div class="metric-row">
+                            <div class="metric-item">
+                                <span class="metric-label">Total Return</span>
+                                <span id="total-return" class="metric-value">Loading...</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">vs SPY</span>
+                                <span id="excess-return" class="metric-value">Loading...</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Max Drawdown</span>
+                                <span id="max-drawdown" class="metric-value">Loading...</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Sharpe Ratio</span>
+                                <span id="sharpe-ratio" class="metric-value">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <canvas id="performance-chart" width="800" height="300"></canvas>
+                    </div>
+                    
+                    <div class="performance-summary">
+                        <div class="summary-item">
+                            <h4>Rolling Returns</h4>
+                            <div id="rolling-returns-summary" class="summary-content">
+                                <div class="loading">Loading rolling returns...</div>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <h4>Strategy Performance</h4>
+                            <div id="strategy-performance-summary" class="summary-content">
+                                <div class="loading">Loading strategy performance...</div>
                             </div>
                         </div>
                     </div>
@@ -864,6 +984,7 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         const API_BASE = 'http://localhost:5000/api/dashboard';
         
@@ -1277,6 +1398,123 @@
             }
         }
 
+        async function updatePerformanceChart() {
+            const performanceHistory = await fetchData('/performance-history');
+            const portfolioAnalytics = await fetchData('/portfolio-analytics');
+            const rollingReturns = await fetchData('/rolling-returns');
+            const strategyPerformance = await fetchData('/strategy-performance');
+            
+            if (!performanceHistory || !portfolioAnalytics) return;
+
+            // Update performance metrics
+            updatePerformanceMetrics(portfolioAnalytics);
+            
+            // Update performance chart
+            updatePerformanceChartVisual(performanceHistory);
+            
+            // Update rolling returns summary
+            updateRollingReturnsSummary(rollingReturns);
+            
+            // Update strategy performance summary
+            updateStrategyPerformanceSummary(strategyPerformance);
+        }
+
+        function updatePerformanceMetrics(analytics) {
+            document.getElementById('total-return').textContent = 
+                `${(analytics.totalReturn * 100).toFixed(2)}%`;
+            document.getElementById('excess-return').textContent = 
+                `${(analytics.excessReturn * 100).toFixed(2)}%`;
+            document.getElementById('max-drawdown').textContent = 
+                `${(analytics.maxDrawdown * 100).toFixed(2)}%`;
+            document.getElementById('sharpe-ratio').textContent = 
+                analytics.sharpeRatio.toFixed(2);
+        }
+
+        function updatePerformanceChartVisual(history) {
+            const ctx = document.getElementById('performance-chart');
+            if (!ctx) return;
+
+            // Destroy existing chart if it exists
+            if (window.performanceChart) {
+                window.performanceChart.destroy();
+            }
+
+            const labels = history.map(point => new Date(point.date).toLocaleDateString());
+            const portfolioData = history.map(point => point.portfolioReturn * 100);
+            const spyData = history.map(point => point.spyReturn * 100);
+
+            window.performanceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Portfolio',
+                        data: portfolioData,
+                        borderColor: 'var(--primary)',
+                        backgroundColor: 'rgba(58, 80, 107, 0.1)',
+                        tension: 0.1
+                    }, {
+                        label: 'SPY',
+                        data: spyData,
+                        borderColor: 'var(--secondary)',
+                        backgroundColor: 'rgba(91, 192, 190, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(1) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateRollingReturnsSummary(rollingReturns) {
+            const container = document.getElementById('rolling-returns-summary');
+            if (!rollingReturns || Object.keys(rollingReturns).length === 0) {
+                container.innerHTML = '<div class="text-muted">No rolling returns data</div>';
+                return;
+            }
+
+            let html = '';
+            Object.entries(rollingReturns).forEach(([period, returnValue]) => {
+                const returnClass = returnValue > 0 ? 'return-positive' : 
+                                  returnValue < 0 ? 'return-negative' : 'return-neutral';
+                html += `<div>${period}: <span class="${returnClass}">${(returnValue * 100).toFixed(2)}%</span></div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function updateStrategyPerformanceSummary(strategyPerformance) {
+            const container = document.getElementById('strategy-performance-summary');
+            if (!strategyPerformance || strategyPerformance.length === 0) {
+                container.innerHTML = '<div class="text-muted">No strategy performance data</div>';
+                return;
+            }
+
+            let html = '';
+            strategyPerformance.forEach(strategy => {
+                const returnClass = strategy.totalReturn > 0 ? 'return-positive' : 
+                                  strategy.totalReturn < 0 ? 'return-negative' : 'return-neutral';
+                html += `<div>${strategy.strategyName}: <span class="${returnClass}">${(strategy.totalReturn * 100).toFixed(2)}%</span></div>`;
+            });
+            container.innerHTML = html;
+        }
+
         async function updateSectorScreener() {
             const sectorAllocations = await fetchData('/sector-allocations');
             const riskManagement = await fetchData('/risk-management');
@@ -1446,6 +1684,7 @@
                 updatePositionSizing(),
                 updateSectorScreener(),
                 updateRiskManagement(),
+                updatePerformanceChart(),
                 updateUpcomingExpirations(),
                 updateOpportunities(),
                 updateAlerts()
