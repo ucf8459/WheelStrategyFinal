@@ -625,6 +625,155 @@
             color: var(--secondary);
             font-weight: bold;
         }
+        
+        /* P&L Tracking Styles */
+        .pnl-metrics {
+            margin-bottom: 1rem;
+        }
+        
+        .pnl-breakdown {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .breakdown-section {
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 1rem;
+        }
+        
+        .breakdown-section h4 {
+            margin: 0 0 0.5rem 0;
+            color: var(--primary);
+            font-size: 0.9rem;
+        }
+        
+        .breakdown-content {
+            font-size: 0.8rem;
+        }
+        
+        .recent-trades {
+            margin-top: 1rem;
+        }
+        
+        .recent-trades h4 {
+            margin: 0 0 0.5rem 0;
+            color: var(--primary);
+            font-size: 0.9rem;
+        }
+        
+        #recent-trades-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        
+        #recent-trades-table th,
+        #recent-trades-table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        #recent-trades-table th {
+            background-color: var(--light);
+            font-weight: bold;
+        }
+        
+        .pnl-positive {
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        .pnl-negative {
+            color: var(--danger);
+            font-weight: bold;
+        }
+        
+        /* Roll Matrix Styles */
+        .roll-matrix-controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background-color: var(--light);
+            border-radius: 4px;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .control-group label {
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
+        .control-group select {
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        
+        .roll-matrix-container {
+            margin-bottom: 1rem;
+        }
+        
+        #roll-matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        
+        #roll-matrix-table th,
+        #roll-matrix-table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        #roll-matrix-table th {
+            background-color: var(--light);
+            font-weight: bold;
+        }
+        
+        .roll-opportunity {
+            background-color: rgba(76, 175, 80, 0.1);
+        }
+        
+        .roll-urgent {
+            background-color: rgba(244, 67, 54, 0.1);
+        }
+        
+        .roll-action-btn {
+            padding: 0.25rem 0.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            color: white;
+        }
+        
+        .roll-action-primary {
+            background-color: var(--primary);
+        }
+        
+        .roll-action-secondary {
+            background-color: var(--secondary);
+        }
+        
+        .roll-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -807,6 +956,142 @@
                             <h4>Strategy Performance</h4>
                             <div id="strategy-performance-summary" class="summary-content">
                                 <div class="loading">Loading strategy performance...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Realized P&L Tracking -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Realized P&L Tracking</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Closed Trades</span>
+                        </div>
+                    </div>
+                    
+                    <div class="pnl-metrics">
+                        <div class="metric-row">
+                            <div class="metric-item">
+                                <span class="metric-label">Total Realized</span>
+                                <span id="total-realized-pnl" class="metric-value">Loading...</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Win Rate</span>
+                                <span id="realized-win-rate" class="metric-value">Loading...</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Avg Win</span>
+                                <span id="avg-win" class="metric-value">Loading...</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Avg Loss</span>
+                                <span id="avg-loss" class="metric-value">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="pnl-breakdown">
+                        <div class="breakdown-section">
+                            <h4>Monthly P&L</h4>
+                            <div id="monthly-pnl" class="breakdown-content">
+                                <div class="loading">Loading monthly P&L...</div>
+                            </div>
+                        </div>
+                        <div class="breakdown-section">
+                            <h4>Quarterly P&L</h4>
+                            <div id="quarterly-pnl" class="breakdown-content">
+                                <div class="loading">Loading quarterly P&L...</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="recent-trades">
+                        <h4>Recent Trades</h4>
+                        <table id="recent-trades-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Symbol</th>
+                                    <th>Type</th>
+                                    <th>Strike</th>
+                                    <th>Entry</th>
+                                    <th>Exit</th>
+                                    <th>P&L</th>
+                                    <th>Duration</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-trades-tbody">
+                                <tr><td colspan="9" class="loading">Loading recent trades...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Roll Matrix -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Roll Matrix</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Rolling Opportunities</span>
+                        </div>
+                    </div>
+                    
+                    <div class="roll-matrix-controls">
+                        <div class="control-group">
+                            <label>Days to Expiry:</label>
+                            <select id="roll-dte-filter">
+                                <option value="7">7 Days</option>
+                                <option value="14">14 Days</option>
+                                <option value="30">30 Days</option>
+                                <option value="45">45 Days</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Delta Range:</label>
+                            <select id="roll-delta-filter">
+                                <option value="0.3">0.30-0.40</option>
+                                <option value="0.4">0.40-0.50</option>
+                                <option value="0.5">0.50-0.60</option>
+                                <option value="0.6">0.60-0.70</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="roll-matrix-container">
+                        <table id="roll-matrix-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Current Position</th>
+                                    <th>Days to Expiry</th>
+                                    <th>Current Delta</th>
+                                    <th>Roll Options</th>
+                                    <th>Premium Credit</th>
+                                    <th>Risk/Reward</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="roll-matrix-tbody">
+                                <tr><td colspan="8" class="loading">Loading roll matrix...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="roll-summary">
+                        <div class="summary-item">
+                            <h4>Roll Opportunities</h4>
+                            <div id="roll-opportunities-summary" class="summary-content">
+                                <div class="loading">Loading roll opportunities...</div>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <h4>Roll Statistics</h4>
+                            <div id="roll-statistics-summary" class="summary-content">
+                                <div class="loading">Loading roll statistics...</div>
                             </div>
                         </div>
                     </div>
@@ -1419,6 +1704,188 @@
             updateStrategyPerformanceSummary(strategyPerformance);
         }
 
+        async function updateRealizedPnL() {
+            const portfolioAnalytics = await fetchData('/portfolio-analytics');
+            const realizedPnL = await fetchData('/realized-pnl');
+            
+            if (!portfolioAnalytics) return;
+
+            // Update P&L metrics
+            updatePnLMetrics(portfolioAnalytics);
+            
+            // Update P&L breakdowns
+            updatePnLBreakdowns(portfolioAnalytics);
+            
+            // Update recent trades table
+            updateRecentTradesTable(realizedPnL);
+        }
+
+        function updatePnLMetrics(analytics) {
+            document.getElementById('total-realized-pnl').textContent = 
+                `$${analytics.totalRealizedPnL.toFixed(2)}`;
+            document.getElementById('realized-win-rate').textContent = 
+                `${(analytics.winRate * 100).toFixed(1)}%`;
+            document.getElementById('avg-win').textContent = 
+                `$${analytics.averageWin.toFixed(2)}`;
+            document.getElementById('avg-loss').textContent = 
+                `$${analytics.averageLoss.toFixed(2)}`;
+        }
+
+        function updatePnLBreakdowns(analytics) {
+            // Update monthly P&L
+            const monthlyContainer = document.getElementById('monthly-pnl');
+            let monthlyHtml = '';
+            Object.entries(analytics.monthlyPnL).forEach(([month, pnl]) => {
+                if (pnl !== 0) {
+                    const pnlClass = pnl > 0 ? 'pnl-positive' : 'pnl-negative';
+                    monthlyHtml += `<div>${month}: <span class="${pnlClass}">$${pnl.toFixed(2)}</span></div>`;
+                }
+            });
+            monthlyContainer.innerHTML = monthlyHtml || '<div class="text-muted">No monthly P&L data</div>';
+
+            // Update quarterly P&L
+            const quarterlyContainer = document.getElementById('quarterly-pnl');
+            let quarterlyHtml = '';
+            Object.entries(analytics.quarterlyPnL).forEach(([quarter, pnl]) => {
+                if (pnl !== 0) {
+                    const pnlClass = pnl > 0 ? 'pnl-positive' : 'pnl-negative';
+                    quarterlyHtml += `<div>${quarter}: <span class="${pnlClass}">$${pnl.toFixed(2)}</span></div>`;
+                }
+            });
+            quarterlyContainer.innerHTML = quarterlyHtml || '<div class="text-muted">No quarterly P&L data</div>';
+        }
+
+        function updateRecentTradesTable(trades) {
+            const tbody = document.getElementById('recent-trades-tbody');
+            if (!trades || trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-muted">No recent trades</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '';
+            trades.forEach(trade => {
+                const tr = document.createElement('tr');
+                const pnlClass = trade.realizedPnLAmount > 0 ? 'pnl-positive' : 'pnl-negative';
+                
+                tr.innerHTML = `
+                    <td>${new Date(trade.date).toLocaleDateString()}</td>
+                    <td><strong>${trade.symbol}</strong></td>
+                    <td>${trade.positionType}</td>
+                    <td>$${trade.strike}</td>
+                    <td>$${trade.entryPrice.toFixed(2)}</td>
+                    <td>$${trade.exitPrice.toFixed(2)}</td>
+                    <td class="${pnlClass}">$${trade.realizedPnLAmount.toFixed(2)}</td>
+                    <td>${trade.holdDuration}</td>
+                    <td>${trade.closeReason}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function updateRollMatrix() {
+            const positions = await fetchData('/positions');
+            const opportunities = await fetchData('/opportunities');
+            
+            if (!positions) return;
+
+            // Update roll matrix table
+            updateRollMatrixTable(positions, opportunities);
+            
+            // Update roll summaries
+            updateRollSummaries(positions, opportunities);
+        }
+
+        function updateRollMatrixTable(positions, opportunities) {
+            const tbody = document.getElementById('roll-matrix-tbody');
+            const dteFilter = document.getElementById('roll-dte-filter').value;
+            const deltaFilter = document.getElementById('roll-delta-filter').value;
+            
+            if (!positions || positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-muted">No positions to roll</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '';
+            positions.forEach(position => {
+                // Filter by DTE and delta
+                const dte = position.daysToExpiry;
+                const delta = Math.abs(position.delta);
+                
+                if (dte <= parseInt(dteFilter) && delta >= parseFloat(deltaFilter) && delta <= parseFloat(deltaFilter) + 0.1) {
+                    const tr = document.createElement('tr');
+                    const rowClass = dte <= 7 ? 'roll-urgent' : 'roll-opportunity';
+                    
+                    // Find matching opportunities
+                    const matchingOpportunities = opportunities ? opportunities.filter(opp => 
+                        opp.symbol === position.symbol && opp.positionType === position.positionType
+                    ) : [];
+                    
+                    const rollOptions = matchingOpportunities.length > 0 ? 
+                        `${matchingOpportunities.length} available` : 'No options';
+                    
+                    const premiumCredit = matchingOpportunities.length > 0 ? 
+                        `$${matchingOpportunities[0].premium.toFixed(2)}` : 'N/A';
+                    
+                    const riskReward = matchingOpportunities.length > 0 ? 
+                        `${matchingOpportunities[0].riskRewardRatio.toFixed(2)}:1` : 'N/A';
+                    
+                    tr.className = rowClass;
+                    tr.innerHTML = `
+                        <td><strong>${position.symbol}</strong></td>
+                        <td>${position.positionType} $${position.strike}</td>
+                        <td>${dte} days</td>
+                        <td>${delta.toFixed(3)}</td>
+                        <td>${rollOptions}</td>
+                        <td>${premiumCredit}</td>
+                        <td>${riskReward}</td>
+                        <td>
+                            ${matchingOpportunities.length > 0 ? 
+                                `<button class="roll-action-btn roll-action-primary" onclick="executeRoll('${position.symbol}', '${position.positionType}')">Roll</button>` :
+                                `<button class="roll-action-btn roll-action-secondary" disabled>No Options</button>`
+                            }
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            });
+            
+            if (tbody.children.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-muted">No positions match current filters</td></tr>';
+            }
+        }
+
+        function updateRollSummaries(positions, opportunities) {
+            // Update roll opportunities summary
+            const opportunitiesContainer = document.getElementById('roll-opportunities-summary');
+            const urgentRolls = positions.filter(p => p.daysToExpiry <= 7).length;
+            const goodRolls = positions.filter(p => p.daysToExpiry <= 14 && p.daysToExpiry > 7).length;
+            
+            opportunitiesContainer.innerHTML = `
+                <div>Urgent Rolls (≤7 days): <strong>${urgentRolls}</strong></div>
+                <div>Good Rolls (8-14 days): <strong>${goodRolls}</strong></div>
+                <div>Total Opportunities: <strong>${urgentRolls + goodRolls}</strong></div>
+            `;
+
+            // Update roll statistics summary
+            const statisticsContainer = document.getElementById('roll-statistics-summary');
+            const avgDelta = positions.length > 0 ? 
+                (positions.reduce((sum, p) => sum + Math.abs(p.delta), 0) / positions.length).toFixed(3) : '0.000';
+            const avgDte = positions.length > 0 ? 
+                (positions.reduce((sum, p) => sum + p.daysToExpiry, 0) / positions.length).toFixed(1) : '0.0';
+            
+            statisticsContainer.innerHTML = `
+                <div>Average Delta: <strong>${avgDelta}</strong></div>
+                <div>Average DTE: <strong>${avgDte} days</strong></div>
+                <div>Total Positions: <strong>${positions.length}</strong></div>
+            `;
+        }
+
+        function executeRoll(symbol, positionType) {
+            // This would integrate with the trade execution system
+            alert(`Rolling ${positionType} position for ${symbol}...`);
+            // In a real implementation, this would call the trade execution API
+        }
+
         function updatePerformanceMetrics(analytics) {
             document.getElementById('total-return').textContent = 
                 `${(analytics.totalReturn * 100).toFixed(2)}%`;
@@ -1685,6 +2152,8 @@
                 updateSectorScreener(),
                 updateRiskManagement(),
                 updatePerformanceChart(),
+                updateRealizedPnL(),
+                updateRollMatrix(),
                 updateUpcomingExpirations(),
                 updateOpportunities(),
                 updateAlerts()
@@ -1709,6 +2178,12 @@
         
         // Auto-refresh every 30 seconds
         setInterval(refreshAll, 30000);
+        
+        // Add event listeners for roll matrix filters
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('roll-dte-filter')?.addEventListener('change', updateRollMatrix);
+            document.getElementById('roll-delta-filter')?.addEventListener('change', updateRollMatrix);
+        });
     </script>
 </body>
 </html> 
