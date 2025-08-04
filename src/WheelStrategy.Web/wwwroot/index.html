@@ -356,6 +356,206 @@
             font-style: italic;
             color: #ccc;
         }
+        
+        /* Decision Support System Styles */
+        .decision-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+        }
+        
+        .decision-section {
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 1rem;
+        }
+        
+        .decision-title {
+            margin: 0 0 1rem 0;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .decision-title.critical {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .decision-title.important {
+            background-color: var(--warning);
+            color: var(--dark);
+        }
+        
+        .decision-title.info {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .decision-list {
+            min-height: 100px;
+        }
+        
+        .decision-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            border-left: 4px solid;
+            background-color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .decision-item.critical {
+            border-left-color: var(--danger);
+            background-color: rgba(230, 57, 70, 0.1);
+        }
+        
+        .decision-item.important {
+            border-left-color: var(--warning);
+            background-color: rgba(244, 162, 97, 0.1);
+        }
+        
+        .decision-item.info {
+            border-left-color: var(--secondary);
+            background-color: rgba(91, 192, 190, 0.1);
+        }
+        
+        .decision-title-text {
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+        }
+        
+        .decision-description {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+        
+        .decision-action {
+            font-size: 0.8rem;
+            color: var(--primary);
+            font-weight: bold;
+        }
+        
+        .decision-metadata {
+            font-size: 0.8rem;
+            color: #999;
+            margin-top: 0.5rem;
+        }
+        
+        .decision-button {
+            margin-top: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        /* Expiration Status Colors */
+        .status-safe {
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        .status-risk {
+            color: var(--warning);
+            font-weight: bold;
+        }
+        
+        .status-itm {
+            color: var(--danger);
+            font-weight: bold;
+        }
+        
+        /* Sector Screener Styles */
+        .sector-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        
+        .sector-section {
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 1rem;
+        }
+        
+        .sector-section h3 {
+            margin: 0 0 1rem 0;
+            padding: 0.5rem;
+            background-color: var(--primary);
+            color: white;
+            border-radius: 4px;
+            font-size: 1rem;
+            text-align: center;
+        }
+        
+        .sector-list {
+            min-height: 100px;
+        }
+        
+        .sector-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            border-left: 4px solid;
+            background-color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .sector-item.overweight {
+            border-left-color: var(--danger);
+            background-color: rgba(230, 57, 70, 0.1);
+        }
+        
+        .sector-item.underweight {
+            border-left-color: var(--success);
+            background-color: rgba(42, 157, 143, 0.1);
+        }
+        
+        .sector-item.normal {
+            border-left-color: var(--secondary);
+            background-color: rgba(91, 192, 190, 0.1);
+        }
+        
+        .sector-name {
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+        }
+        
+        .sector-weight {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+        
+        .sector-recommendation {
+            font-size: 0.8rem;
+            color: var(--primary);
+            font-weight: bold;
+        }
+        
+        .opportunity-score {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-left: 0.5rem;
+        }
+        
+        .opportunity-high {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .opportunity-medium {
+            background-color: var(--warning);
+            color: var(--dark);
+        }
+        
+        .opportunity-low {
+            background-color: var(--secondary);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -413,6 +613,11 @@
                             <div id="win-rate" class="metric-value">Loading...</div>
                             <div class="section-label">Success Rate</div>
                         </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Position Size</div>
+                            <div id="position-size" class="metric-value">Loading...</div>
+                            <div id="position-size-reason" class="section-label">VIX-Based</div>
+                        </div>
                     </div>
                 </div>
 
@@ -450,6 +655,132 @@
                     </table>
                 </div>
 
+                <!-- Decision Support System -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Decision Support System</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span id="decision-counter">0/3 Used Today</span>
+                        </div>
+                    </div>
+                    
+                    <div class="decision-grid">
+                        <!-- Critical Decisions -->
+                        <div class="decision-section">
+                            <h3 class="decision-title critical">Critical Actions</h3>
+                            <div id="critical-decisions" class="decision-list">
+                                <div class="loading">Loading critical decisions...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Important Decisions -->
+                        <div class="decision-section">
+                            <h3 class="decision-title important">Important Actions</h3>
+                            <div id="important-decisions" class="decision-list">
+                                <div class="loading">Loading important decisions...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Info Decisions -->
+                        <div class="decision-section">
+                            <h3 class="decision-title info">Information</h3>
+                            <div id="info-decisions" class="decision-list">
+                                <div class="loading">Loading info decisions...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sector Opportunity Screener -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Sector Opportunity Screener</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Regime-Based</span>
+                        </div>
+                    </div>
+                    
+                    <div class="sector-grid">
+                        <div class="sector-section">
+                            <h3>Sector Allocations</h3>
+                            <div id="sector-allocations" class="sector-list">
+                                <div class="loading">Loading sector allocations...</div>
+                            </div>
+                        </div>
+                        
+                        <div class="sector-section">
+                            <h3>Opportunity Gaps</h3>
+                            <div id="sector-opportunities" class="sector-list">
+                                <div class="loading">Loading opportunities...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Position Sizing Analysis -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Position Sizing Analysis</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>VIX-Based</span>
+                        </div>
+                    </div>
+                    
+                    <table id="position-sizing-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Current Size</th>
+                                <th>Recommended</th>
+                                <th>Max Allowed</th>
+                                <th>Portfolio %</th>
+                                <th>Status</th>
+                                <th>Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="position-sizing-tbody">
+                            <tr>
+                                <td colspan="7" class="loading">Loading position sizing...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Upcoming Expirations -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Upcoming Expirations (7 Days)</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span>Monitoring</span>
+                        </div>
+                    </div>
+                    
+                    <table id="expirations-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Strike</th>
+                                <th>Expiry</th>
+                                <th>DTE</th>
+                                <th>Status</th>
+                                <th>Delta</th>
+                                <th>P&L %</th>
+                                <th>Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expirations-tbody">
+                            <tr>
+                                <td colspan="9" class="loading">Loading expirations...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <!-- Opportunities -->
                 <div class="card">
                     <div class="card-header">
@@ -467,6 +798,39 @@
             </div>
 
             <div class="sidebar">
+                <!-- Risk Management Dashboard -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Risk Management</h2>
+                        <div class="status-indicator">
+                            <div class="status-dot status-active"></div>
+                            <span id="risk-status">Active</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Portfolio Risk</div>
+                            <div id="portfolio-risk" class="metric-value">Loading...</div>
+                            <div class="section-label">Overall Risk Level</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Delta Exposure</div>
+                            <div id="delta-exposure" class="metric-value">Loading...</div>
+                            <div class="section-label">Net Delta</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Circuit Breaker</div>
+                            <div id="circuit-breaker" class="metric-value" style="color: var(--success);">Inactive</div>
+                            <div class="section-label">Risk Management</div>
+                        </div>
+                    </div>
+                    
+                    <div id="risk-alerts-container" class="loading">
+                        Loading risk alerts...
+                    </div>
+                </div>
+
                 <!-- Alerts -->
                 <div class="card">
                     <div class="card-header">
@@ -493,11 +857,6 @@
                             <div class="metric-label">API Connection</div>
                             <div id="api-connection" class="metric-value" style="color: var(--success);">Connected</div>
                             <div class="section-label">IBKR Gateway</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-label">Circuit Breaker</div>
-                            <div id="circuit-breaker" class="metric-value" style="color: var(--success);">Inactive</div>
-                            <div class="section-label">Risk Management</div>
                         </div>
                     </div>
                 </div>
@@ -563,6 +922,22 @@
             document.getElementById('vix-value').textContent = metrics.vixLevel.toFixed(1);
             document.getElementById('vix-percentile').textContent = `${metrics.vixPercentile}%`;
             document.getElementById('regime-value').textContent = metrics.marketRegime;
+            
+            // Calculate VIX-based position sizing
+            const vixPercentile = metrics.vixPercentile;
+            let positionSizePercent = 100;
+            let sizeReason = 'Full Size';
+            
+            if (vixPercentile > 90) {
+                positionSizePercent = 50;
+                sizeReason = 'VIX >90% - 50% Size';
+            } else if (vixPercentile > 75) {
+                positionSizePercent = 75;
+                sizeReason = 'VIX 75-90% - 75% Size';
+            }
+            
+            document.getElementById('position-size').textContent = `${positionSizePercent}%`;
+            document.getElementById('position-size-reason').textContent = sizeReason;
             
             // Update market regime badge
             const regimeBadge = document.getElementById('market-regime');
@@ -749,6 +1124,286 @@
             });
         }
 
+        async function updateDecisionSupport() {
+            const decisionSupport = await fetchData('/decision-support');
+            if (!decisionSupport) return;
+
+            // Update decision counter
+            document.getElementById('decision-counter').textContent = 
+                `${decisionSupport.decisionsUsedToday}/${decisionSupport.maxDecisionsToday} Used Today`;
+
+            // Update critical decisions
+            updateDecisionList('critical-decisions', decisionSupport.criticalDecisions, 'critical');
+            
+            // Update important decisions
+            updateDecisionList('important-decisions', decisionSupport.importantDecisions, 'important');
+            
+            // Update info decisions
+            updateDecisionList('info-decisions', decisionSupport.infoDecisions, 'info');
+        }
+
+        function updateDecisionList(containerId, decisions, priority) {
+            const container = document.getElementById(containerId);
+            
+            if (decisions.length === 0) {
+                container.innerHTML = '<div class="section-label">No decisions in this category</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            decisions.forEach(decision => {
+                const div = document.createElement('div');
+                div.className = `decision-item ${priority}`;
+                
+                let metadata = '';
+                if (decision.symbol) {
+                    metadata += `Symbol: ${decision.symbol} `;
+                }
+                if (decision.strike) {
+                    metadata += `Strike: $${decision.strike} `;
+                }
+                if (decision.dte) {
+                    metadata += `DTE: ${decision.dte} `;
+                }
+                if (decision.delta) {
+                    metadata += `Delta: ${decision.delta.toFixed(2)} `;
+                }
+                
+                div.innerHTML = `
+                    <div class="decision-title-text">${decision.title}</div>
+                    <div class="decision-description">${decision.description}</div>
+                    ${decision.actionRequired ? `<div class="decision-action">Action: ${decision.actionRequired}</div>` : ''}
+                    ${metadata ? `<div class="decision-metadata">${metadata}</div>` : ''}
+                    <button class="btn btn-${priority === 'critical' ? 'danger' : 
+                                            priority === 'important' ? 'warning' : 
+                                            'secondary'} decision-button" 
+                            onclick="recordDecision('${decision.title}', '${priority}')">
+                        Mark Complete
+                    </button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function updatePositionSizing() {
+            const positionSizing = await fetchData('/position-sizing');
+            if (!positionSizing) return;
+
+            const tbody = document.getElementById('position-sizing-tbody');
+            tbody.innerHTML = '';
+            
+            if (positionSizing.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-muted">No position sizing data</td></tr>';
+                return;
+            }
+            
+            positionSizing.forEach(pos => {
+                const tr = document.createElement('tr');
+                const statusClass = pos.isOverSized ? 'status-itm' : 'status-safe';
+                const statusText = pos.isOverSized ? 'Overweight' : 'Normal';
+                
+                tr.innerHTML = `
+                    <td><strong>${pos.symbol}</strong></td>
+                    <td>${formatCurrency(pos.currentPositionSize)}</td>
+                    <td>${formatCurrency(pos.recommendedPositionSize)}</td>
+                    <td>${formatCurrency(pos.maxPositionSize)}</td>
+                    <td>${pos.portfolioWeight.toFixed(1)}%</td>
+                    <td class="${statusClass}">${statusText}</td>
+                    <td>${pos.recommendation}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function updateUpcomingExpirations() {
+            const expirations = await fetchData('/upcoming-expirations');
+            if (!expirations) return;
+
+            const tbody = document.getElementById('expirations-tbody');
+            tbody.innerHTML = '';
+            
+            if (expirations.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-muted">No upcoming expirations</td></tr>';
+                return;
+            }
+            
+            expirations.forEach(exp => {
+                const tr = document.createElement('tr');
+                const statusClass = exp.status === 'Safe OTM' ? 'status-safe' : 
+                                  exp.status === 'At Risk' ? 'status-risk' : 'status-itm';
+                
+                tr.innerHTML = `
+                    <td><strong>${exp.symbol}</strong></td>
+                    <td>${exp.positionType}</td>
+                    <td>$${exp.strike.toFixed(2)}</td>
+                    <td>${new Date(exp.expiry).toLocaleDateString()}</td>
+                    <td>${exp.dte}</td>
+                    <td class="${statusClass}">${exp.status}</td>
+                    <td>${exp.delta.toFixed(2)}</td>
+                    <td>
+                        <span class="badge ${exp.pnlPercent >= 0 ? 'badge-success' : 'badge-warning'}">
+                            ${exp.pnlPercent > 0 ? '+' : ''}${exp.pnlPercent.toFixed(1)}%
+                        </span>
+                    </td>
+                    <td>${exp.recommendation}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function recordDecision(title, category) {
+            try {
+                const response = await fetch(`${API_BASE}/record-decision`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        decision: title,
+                        category: category
+                    })
+                });
+                
+                if (response.ok) {
+                    console.log('Decision recorded successfully');
+                    // Refresh decision support data
+                    await updateDecisionSupport();
+                } else {
+                    console.error('Failed to record decision');
+                }
+            } catch (error) {
+                console.error('Error recording decision:', error);
+            }
+        }
+
+        async function updateSectorScreener() {
+            const sectorAllocations = await fetchData('/sector-allocations');
+            const riskManagement = await fetchData('/risk-management');
+            
+            if (!sectorAllocations || !riskManagement) return;
+
+            // Update sector allocations
+            updateSectorAllocations(sectorAllocations);
+            
+            // Update sector opportunities based on risk management data
+            updateSectorOpportunities(riskManagement.sectorConcentration);
+        }
+
+        function updateSectorAllocations(allocations) {
+            const container = document.getElementById('sector-allocations');
+            container.innerHTML = '';
+            
+            if (Object.keys(allocations).length === 0) {
+                container.innerHTML = '<div class="section-label">No sector data available</div>';
+                return;
+            }
+            
+            Object.entries(allocations).forEach(([sector, value]) => {
+                const div = document.createElement('div');
+                const weight = (value / 83615) * 100; // Using account value from metrics
+                const weightClass = weight > 30 ? 'overweight' : weight < 5 ? 'underweight' : 'normal';
+                
+                div.className = `sector-item ${weightClass}`;
+                div.innerHTML = `
+                    <div class="sector-name">${sector}</div>
+                    <div class="sector-weight">${weight.toFixed(1)}% of portfolio</div>
+                    <div class="sector-recommendation">
+                        ${weight > 30 ? 'Consider reducing exposure' : 
+                          weight < 5 ? 'Opportunity for increased exposure' : 
+                          'Within target range'}
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function updateSectorOpportunities(sectorConcentration) {
+            const container = document.getElementById('sector-opportunities');
+            container.innerHTML = '';
+            
+            if (sectorConcentration.length === 0) {
+                container.innerHTML = '<div class="section-label">No sector opportunities</div>';
+                return;
+            }
+            
+            sectorConcentration.forEach(sector => {
+                const div = document.createElement('div');
+                const opportunityClass = sector.isOverConcentrated ? 'overweight' : 
+                                       sector.portfolioWeight < 5 ? 'underweight' : 'normal';
+                const opportunityScore = sector.isOverConcentrated ? 'low' : 
+                                       sector.portfolioWeight < 5 ? 'high' : 'medium';
+                
+                div.className = `sector-item ${opportunityClass}`;
+                div.innerHTML = `
+                    <div class="sector-name">
+                        ${sector.sector}
+                        <span class="opportunity-score opportunity-${opportunityScore}">
+                            ${opportunityScore.toUpperCase()}
+                        </span>
+                    </div>
+                    <div class="sector-weight">${sector.portfolioWeight.toFixed(1)}% of portfolio</div>
+                    <div class="sector-recommendation">${sector.recommendation}</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function updateRiskManagement() {
+            const riskManagement = await fetchData('/risk-management');
+            if (!riskManagement) return;
+
+            // Update risk metrics
+            document.getElementById('portfolio-risk').textContent = 
+                `${riskManagement.totalPortfolioRisk.toFixed(1)}%`;
+            document.getElementById('delta-exposure').textContent = 
+                `${riskManagement.deltaExposure.netDelta.toFixed(1)}`;
+            
+            // Update risk status
+            const riskStatus = document.getElementById('risk-status');
+            if (riskManagement.overallRiskLevel === 'Critical') {
+                riskStatus.textContent = 'Critical';
+                riskStatus.style.color = 'var(--danger)';
+            } else if (riskManagement.overallRiskLevel === 'High') {
+                riskStatus.textContent = 'High';
+                riskStatus.style.color = 'var(--warning)';
+            } else {
+                riskStatus.textContent = 'Normal';
+                riskStatus.style.color = 'var(--success)';
+            }
+            
+            // Update risk alerts
+            const container = document.getElementById('risk-alerts-container');
+            
+            if (riskManagement.activeAlerts.length === 0) {
+                container.innerHTML = '<div class="section-label">No risk alerts</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            riskManagement.activeAlerts.forEach(alert => {
+                const div = document.createElement('div');
+                const severityClass = alert.severity === 3 ? 'critical' : 
+                                    alert.severity === 2 ? 'important' : 'info';
+                div.className = `alert alert-${severityClass}`;
+                div.innerHTML = `
+                    <div>
+                        <strong>${alert.title}</strong><br>
+                        <small>${alert.description}</small>
+                    </div>
+                    <div style="margin-left: auto;">
+                        <button class="btn btn-${severityClass === 'critical' ? 'danger' : 
+                                                severityClass === 'important' ? 'warning' : 
+                                                'secondary'} btn-sm">
+                            Review
+                        </button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
         async function updateAlerts() {
             const alerts = await fetchData('/alerts?count=5');
             if (!alerts) return;
@@ -787,6 +1442,11 @@
             await Promise.all([
                 updateMetrics(),
                 updatePositions(),
+                updateDecisionSupport(),
+                updatePositionSizing(),
+                updateSectorScreener(),
+                updateRiskManagement(),
+                updateUpcomingExpirations(),
                 updateOpportunities(),
                 updateAlerts()
             ]);

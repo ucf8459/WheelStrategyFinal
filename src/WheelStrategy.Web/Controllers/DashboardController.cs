@@ -18,6 +18,7 @@ public class DashboardController : ControllerBase
     private readonly IAlertManager _alertManager;
     private readonly IDecisionSupportService _decisionSupportService;
     private readonly IPortfolioAnalyticsService _portfolioAnalyticsService;
+    private readonly IRiskManagementService _riskManagementService;
     
     public DashboardController(
         ILogger<DashboardController> logger,
@@ -25,7 +26,8 @@ public class DashboardController : ControllerBase
         IWheelScanner wheelScanner,
         IAlertManager alertManager,
         IDecisionSupportService decisionSupportService,
-        IPortfolioAnalyticsService portfolioAnalyticsService)
+        IPortfolioAnalyticsService portfolioAnalyticsService,
+        IRiskManagementService riskManagementService)
     {
         _logger = logger;
         _wheelMonitor = wheelMonitor;
@@ -33,6 +35,7 @@ public class DashboardController : ControllerBase
         _alertManager = alertManager;
         _decisionSupportService = decisionSupportService;
         _portfolioAnalyticsService = portfolioAnalyticsService;
+        _riskManagementService = riskManagementService;
     }
     
     /// <summary>
@@ -446,6 +449,186 @@ public class DashboardController : ControllerBase
         {
             _logger.LogError(ex, "Failed to get rolling returns");
             return StatusCode(500, "Failed to get rolling returns");
+        }
+    }
+    
+    /// <summary>
+    /// Gets risk management summary
+    /// </summary>
+    [HttpGet("risk-management")]
+    public async Task<ActionResult<RiskManagementSummary>> GetRiskManagement()
+    {
+        try
+        {
+            var riskSummary = await _riskManagementService.GetRiskManagementSummaryAsync();
+            return Ok(riskSummary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get risk management summary");
+            return StatusCode(500, "Failed to get risk management summary");
+        }
+    }
+    
+    /// <summary>
+    /// Gets position sizing analysis
+    /// </summary>
+    [HttpGet("position-sizing")]
+    public async Task<ActionResult<List<PositionSizingAnalysis>>> GetPositionSizing()
+    {
+        try
+        {
+            var positionSizing = await _riskManagementService.AnalyzePositionSizingAsync();
+            return Ok(positionSizing);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get position sizing analysis");
+            return StatusCode(500, "Failed to get position sizing analysis");
+        }
+    }
+    
+    /// <summary>
+    /// Gets correlation analysis
+    /// </summary>
+    [HttpGet("correlations")]
+    public async Task<ActionResult<List<CorrelationAnalysis>>> GetCorrelations()
+    {
+        try
+        {
+            var correlations = await _riskManagementService.AnalyzeCorrelationsAsync();
+            return Ok(correlations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get correlation analysis");
+            return StatusCode(500, "Failed to get correlation analysis");
+        }
+    }
+    
+    /// <summary>
+    /// Gets sector concentration analysis
+    /// </summary>
+    [HttpGet("sector-concentration")]
+    public async Task<ActionResult<List<SectorConcentrationAnalysis>>> GetSectorConcentration()
+    {
+        try
+        {
+            var sectorConcentration = await _riskManagementService.AnalyzeSectorConcentrationAsync();
+            return Ok(sectorConcentration);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sector concentration analysis");
+            return StatusCode(500, "Failed to get sector concentration analysis");
+        }
+    }
+    
+    /// <summary>
+    /// Gets delta exposure analysis
+    /// </summary>
+    [HttpGet("delta-exposure")]
+    public async Task<ActionResult<DeltaExposureAnalysis>> GetDeltaExposure()
+    {
+        try
+        {
+            var deltaExposure = await _riskManagementService.AnalyzeDeltaExposureAsync();
+            return Ok(deltaExposure);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get delta exposure analysis");
+            return StatusCode(500, "Failed to get delta exposure analysis");
+        }
+    }
+    
+    /// <summary>
+    /// Gets active risk alerts
+    /// </summary>
+    [HttpGet("risk-alerts")]
+    public async Task<ActionResult<List<RiskAlert>>> GetRiskAlerts()
+    {
+        try
+        {
+            var riskAlerts = await _riskManagementService.GetActiveRiskAlertsAsync();
+            return Ok(riskAlerts);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get risk alerts");
+            return StatusCode(500, "Failed to get risk alerts");
+        }
+    }
+    
+    /// <summary>
+    /// Acknowledges a risk alert
+    /// </summary>
+    [HttpPost("acknowledge-risk-alert")]
+    public async Task<ActionResult> AcknowledgeRiskAlert([FromBody] string alertId)
+    {
+        try
+        {
+            await _riskManagementService.AcknowledgeRiskAlertAsync(alertId);
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to acknowledge risk alert");
+            return StatusCode(500, "Failed to acknowledge risk alert");
+        }
+    }
+    
+    /// <summary>
+    /// Gets risk metrics
+    /// </summary>
+    [HttpGet("risk-metrics")]
+    public async Task<ActionResult<Dictionary<string, decimal>>> GetRiskMetrics()
+    {
+        try
+        {
+            var riskMetrics = await _riskManagementService.CalculateRiskMetricsAsync();
+            return Ok(riskMetrics);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get risk metrics");
+            return StatusCode(500, "Failed to get risk metrics");
+        }
+    }
+    
+    /// <summary>
+    /// Checks if portfolio is within risk limits
+    /// </summary>
+    [HttpGet("risk-limits")]
+    public async Task<ActionResult<bool>> GetRiskLimits()
+    {
+        try
+        {
+            var isWithinLimits = await _riskManagementService.IsWithinRiskLimitsAsync();
+            return Ok(isWithinLimits);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check risk limits");
+            return StatusCode(500, "Failed to check risk limits");
+        }
+    }
+    
+    /// <summary>
+    /// Gets recommended position sizes
+    /// </summary>
+    [HttpGet("recommended-position-sizes")]
+    public async Task<ActionResult<Dictionary<string, decimal>>> GetRecommendedPositionSizes()
+    {
+        try
+        {
+            var recommendations = await _riskManagementService.GetRecommendedPositionSizesAsync();
+            return Ok(recommendations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get recommended position sizes");
+            return StatusCode(500, "Failed to get recommended position sizes");
         }
     }
 }
