@@ -5,36 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wheel Strategy Dashboard</title>
     <style>
-        /* Global Styles */
+        /* Global Styles - DARK MODE */
         :root {
-            --primary: #3a506b;
-            --secondary: #5bc0be;
-            --accent: #ffa62b;
-            --danger: #e63946;
-            --success: #2a9d8f;
-            --warning: #f4a261;
-            --light: #edf2f4;
-            --dark: #1d3557;
-            --bg: #f8f9fa;
-            --card-bg: #ffffff;
+            --primary: #6366f1;
+            --secondary: #22d3ee;
+            --accent: #fbbf24;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --light: #374151;
+            --dark: #f9fafb;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --border: #334155;
+            --text-muted: #94a3b8;
+            --text-primary: #f1f5f9;
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
             padding: 0;
             background-color: var(--bg);
-            color: var(--dark);
+            color: var(--text-primary);
         }
         
         header {
-            background-color: var(--primary);
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
             color: white;
-            padding: 1rem;
+            padding: 1rem 1.5rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            border-bottom: 1px solid var(--border);
         }
         
         .container {
@@ -63,10 +67,11 @@
         
         .card {
             background-color: var(--card-bg);
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+            padding: 1.25rem;
             margin-bottom: 1rem;
+            border: 1px solid var(--border);
         }
         
         .card-header {
@@ -74,8 +79,13 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid #eee;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .card-header h2 {
+            color: var(--text-primary);
+            margin: 0;
         }
         
         .status-indicator {
@@ -110,7 +120,74 @@
         }
         
         .dte-white {
-            color: var(--dark) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        /* Dark mode table styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        table th {
+            background-color: #334155;
+            color: var(--text-primary);
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border);
+        }
+        
+        table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+        
+        table tr:hover {
+            background-color: rgba(99, 102, 241, 0.1);
+        }
+        
+        /* Dark mode inputs */
+        input, select {
+            background-color: #334155;
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 6px;
+            padding: 0.5rem;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+        
+        /* Dark mode metric cards */
+        .metric-card {
+            background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .metric-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .section-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
         }
         
         /* Delta Risk Indicators */
@@ -159,9 +236,12 @@
         }
         
         .badge {
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.8rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
             font-weight: bold;
         }
         
@@ -384,29 +464,44 @@
         .btn {
             padding: 0.5rem 1rem;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
-            font-weight: bold;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
         
         .btn-primary {
-            background-color: var(--primary);
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
             color: white;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);
         }
         
         .btn-secondary {
-            background-color: var(--secondary);
-            color: white;
+            background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 100%);
+            color: #0f172a;
         }
         
         .btn-success {
-            background-color: var(--success);
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: white;
         }
         
         .btn-danger {
-            background-color: var(--danger);
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
             color: white;
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: #0f172a;
         }
         
         .btn-sm {
@@ -502,7 +597,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script>
         // Check server status first
-        fetch('http://localhost:7001/status')
+        fetch('/status')
             .then(response => response.json())
             .then(data => {
                 console.log('Server status:', data);
@@ -826,6 +921,225 @@
             portfolioChart.update();
         }
         
+        // ============================================
+        // BENCHMARK COMPARISON CHART
+        // ============================================
+        let benchmarkChart = null;
+        let currentBenchmarkPeriod = '3m';
+        let currentBenchmarkTicker = 'SPY';
+        
+        // Initialize benchmark chart
+        function initBenchmarkChart() {
+            const ctx = document.getElementById('benchmark-chart');
+            if (!ctx) return;
+            
+            benchmarkChart = new Chart(ctx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Your Portfolio',
+                        data: [],
+                        borderColor: '#2a9d8f',
+                        backgroundColor: 'rgba(42, 157, 143, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.2,
+                        pointRadius: 1,
+                        pointHoverRadius: 5
+                    }, {
+                        label: 'SPY',
+                        data: [],
+                        borderColor: '#6c757d',
+                        backgroundColor: 'rgba(108, 117, 125, 0.05)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.2,
+                        pointRadius: 1,
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(1) + '%';
+                                },
+                                color: '#94a3b8'
+                            },
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#94a3b8',
+                                maxRotation: 0,
+                                autoSkip: true,
+                                maxTicksLimit: 8
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                color: '#f1f5f9'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                            titleColor: '#f1f5f9',
+                            bodyColor: '#f1f5f9',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    const sign = value >= 0 ? '+' : '';
+                                    return label + ': ' + sign + value.toFixed(2) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Fetch benchmark comparison data
+        function fetchBenchmarkComparison(period = '3m', ticker = 'SPY') {
+            currentBenchmarkPeriod = period;
+            currentBenchmarkTicker = ticker;
+            
+            // Update active button state
+            document.querySelectorAll('#benchmark-period-selector .btn').forEach(btn => {
+                if (btn.dataset.period === period) {
+                    btn.classList.remove('btn-secondary');
+                    btn.classList.add('btn-primary');
+                } else {
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-secondary');
+                }
+            });
+            
+            // Update ticker label
+            document.getElementById('benchmark-ticker-label').textContent = ticker;
+            
+            // Show loading state
+            document.getElementById('benchmark-portfolio-return').textContent = '...';
+            document.getElementById('benchmark-spy-return').textContent = '...';
+            document.getElementById('benchmark-alpha').textContent = '...';
+            document.getElementById('benchmark-status').textContent = 'Loading...';
+            
+            fetch(`/api/benchmark-comparison?period=${period}&benchmark=${ticker}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error('Benchmark error:', data.error);
+                        document.getElementById('benchmark-status').textContent = 'No Data';
+                        return;
+                    }
+                    
+                    updateBenchmarkDisplay(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching benchmark:', error);
+                    document.getElementById('benchmark-status').textContent = 'Error';
+                });
+        }
+        
+        // Update benchmark display with data
+        function updateBenchmarkDisplay(data) {
+            if (!data) return;
+            
+            // Update stats
+            const portfolioReturn = data.portfolio?.return_pct || 0;
+            const benchmarkReturn = data.benchmark?.return_pct || 0;
+            const alpha = data.alpha || 0;
+            
+            // Format returns with + sign for positive
+            const formatReturn = (val) => {
+                const sign = val >= 0 ? '+' : '';
+                return sign + val.toFixed(2) + '%';
+            };
+            
+            document.getElementById('benchmark-portfolio-return').textContent = formatReturn(portfolioReturn);
+            document.getElementById('benchmark-portfolio-return').style.color = portfolioReturn >= 0 ? '#10b981' : '#ef4444';
+            
+            document.getElementById('benchmark-spy-return').textContent = formatReturn(benchmarkReturn);
+            document.getElementById('benchmark-spy-return').style.color = benchmarkReturn >= 0 ? '#10b981' : '#ef4444';
+            
+            document.getElementById('benchmark-alpha').textContent = formatReturn(alpha);
+            document.getElementById('benchmark-alpha').style.color = alpha >= 0 ? '#fbbf24' : '#f87171';
+            
+            // Update status message
+            const statusEl = document.getElementById('benchmark-status');
+            if (alpha > 2) {
+                statusEl.innerHTML = '🚀 Beating Market';
+                statusEl.style.color = '#10b981';
+            } else if (alpha > 0) {
+                statusEl.innerHTML = '✅ Outperforming';
+                statusEl.style.color = '#22d3ee';
+            } else if (alpha > -2) {
+                statusEl.innerHTML = '📊 Tracking';
+                statusEl.style.color = '#94a3b8';
+            } else {
+                statusEl.innerHTML = '⚠️ Underperforming';
+                statusEl.style.color = '#f59e0b';
+            }
+            
+            // Update chart
+            if (benchmarkChart && data.comparison_data) {
+                const labels = data.comparison_data.map(point => {
+                    const date = new Date(point.date);
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                });
+                
+                const portfolioData = data.comparison_data.map(point => point.portfolio_return ?? null);
+                const benchmarkData = data.comparison_data.map(point => point.benchmark_return ?? null);
+                
+                benchmarkChart.data.labels = labels;
+                benchmarkChart.data.datasets[0].data = portfolioData;
+                benchmarkChart.data.datasets[0].label = 'Your Portfolio';
+                benchmarkChart.data.datasets[1].data = benchmarkData;
+                benchmarkChart.data.datasets[1].label = data.benchmark_ticker || 'SPY';
+                benchmarkChart.update();
+            }
+        }
+        
+        // Initialize benchmark period selector
+        function initBenchmarkControls() {
+            // Period buttons
+            document.querySelectorAll('#benchmark-period-selector .btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    fetchBenchmarkComparison(this.dataset.period, currentBenchmarkTicker);
+                });
+            });
+            
+            // Benchmark ticker selector
+            const tickerSelect = document.getElementById('benchmark-ticker');
+            if (tickerSelect) {
+                tickerSelect.addEventListener('change', function() {
+                    fetchBenchmarkComparison(currentBenchmarkPeriod, this.value);
+                });
+            }
+        }
+        
         // Update sector exposure
         function updateSectorExposure(sectorData) {
             const tbody = document.querySelector('#sector-table tbody');
@@ -850,6 +1164,663 @@
                 tbody.appendChild(tr);
             });
         }
+
+        // Update position sizing display
+        function updatePositionSizing(data) {
+            if (!data) return;
+            
+            // Update main metrics
+            document.getElementById('buying-power').textContent = '$' + (data.buying_power || 0).toLocaleString();
+            document.getElementById('max-position-size').textContent = '$' + (data.max_position_size || 0).toLocaleString();
+            document.getElementById('max-position-pct').textContent = (data.max_position_pct || 10) + '% of buying power';
+            document.getElementById('max-new-trade').textContent = '$' + (data.max_new_position || 0).toLocaleString();
+            document.getElementById('excess-liquidity').textContent = '$' + (data.excess_liquidity || 0).toLocaleString();
+            
+            // Update status badge
+            const statusBadge = document.getElementById('position-sizing-status');
+            if (data.can_open_new_position) {
+                statusBadge.textContent = 'Ready to Trade';
+                statusBadge.className = 'badge-market badge-bull';
+            } else {
+                statusBadge.textContent = 'At Capacity';
+                statusBadge.className = 'badge-market badge-bear';
+            }
+            
+            // Update sector usage bars
+            const sectorBarsContainer = document.getElementById('sector-usage-bars');
+            if (sectorBarsContainer && data.sector_usage) {
+                let barsHtml = '';
+                
+                // Sort sectors by usage percentage (descending)
+                const sortedSectors = Object.entries(data.sector_usage)
+                    .filter(([sector, info]) => info.used > 0 || sector !== 'Other')
+                    .sort((a, b) => b[1].pct - a[1].pct);
+                
+                sortedSectors.forEach(([sector, info]) => {
+                    const pct = Math.min(info.pct, 100);
+                    const barColor = pct >= 90 ? '#e63946' : pct >= 70 ? '#f4a261' : '#2a9d8f';
+                    const statusText = pct >= 100 ? 'FULL' : pct >= 80 ? 'Near Limit' : 'OK';
+                    
+                    barsHtml += `
+                        <div style="margin-bottom: 0.75rem;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                                <span><strong>${sector}</strong> ${info.symbols ? '(' + info.symbols.join(', ') + ')' : ''}</span>
+                                <span style="color: ${barColor};">$${info.used.toLocaleString()} / $${info.limit.toLocaleString()} (${pct.toFixed(0)}%) - ${statusText}</span>
+                            </div>
+                            <div style="background-color: #475569; border-radius: 4px; height: 12px; overflow: hidden;">
+                                <div style="width: ${pct}%; height: 100%; background-color: ${barColor}; transition: width 0.3s;"></div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                sectorBarsContainer.innerHTML = barsHtml || '<div style="color: var(--text-muted);">No active positions</div>';
+            }
+            
+            // Store data for trade check calculator
+            window.positionSizingData = data;
+        }
+        
+        // Quick trade check calculator
+        function checkTrade() {
+            const strikeInput = document.getElementById('trade-check-strike');
+            const contractsInput = document.getElementById('trade-check-contracts');
+            const resultDiv = document.getElementById('trade-check-result');
+            
+            const strike = parseFloat(strikeInput.value) || 0;
+            const contracts = parseInt(contractsInput.value) || 1;
+            
+            if (strike <= 0) {
+                resultDiv.innerHTML = '<span style="color: #e63946;">Enter a strike price</span>';
+                return;
+            }
+            
+            const tradeValue = strike * 100 * contracts;
+            const data = window.positionSizingData || {};
+            const maxPosition = data.max_position_size || 8000;
+            const available = data.available_buying_power || 80000;
+            
+            if (tradeValue > available) {
+                resultDiv.innerHTML = `<span style="color: #e63946;">❌ NO - Needs $${tradeValue.toLocaleString()}, only $${available.toLocaleString()} available</span>`;
+            } else if (tradeValue > maxPosition) {
+                resultDiv.innerHTML = `<span style="color: #f4a261;">⚠️ EXCEEDS LIMIT - $${tradeValue.toLocaleString()} > $${maxPosition.toLocaleString()} max position</span>`;
+            } else {
+                const pctOfLimit = (tradeValue / maxPosition * 100).toFixed(0);
+                resultDiv.innerHTML = `<span style="color: #2a9d8f;">✅ OK - $${tradeValue.toLocaleString()} (${pctOfLimit}% of position limit)</span>`;
+            }
+        }
+
+        // ============================================================
+        // Investment Thesis Lab - AI Research Functions
+        // ============================================================
+        
+        // Check AI status on page load
+        function checkThesisLabStatus() {
+            fetch('/api/thesis-lab/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDot = document.getElementById('ai-status-dot');
+                    const providerName = document.getElementById('ai-provider-name');
+                    const content = document.getElementById('thesis-lab-content');
+                    const unavailable = document.getElementById('thesis-lab-unavailable');
+                    const switcher = document.getElementById('model-switcher');
+                    const select = document.getElementById('ai-model-select');
+                    
+                    if (data.available) {
+                        statusDot.className = 'status-dot status-active';
+                        providerName.textContent = data.provider;
+                        content.style.display = 'block';
+                        unavailable.style.display = 'none';
+                        
+                        // Build model dropdown if we have models
+                        if (data.models && (data.models.claude || data.models.openai)) {
+                            switcher.style.display = 'block';
+                            
+                            // Build options grouped by provider
+                            let options = '';
+                            
+                            if (data.models.claude && data.models.claude.length > 0) {
+                                options += '<optgroup label="🟣 Claude (Anthropic)">';
+                                data.models.claude.forEach(m => {
+                                    const selected = m.id === data.model_id ? 'selected' : '';
+                                    options += `<option value="${m.id}" ${selected} title="${m.description}">${m.name}</option>`;
+                                });
+                                options += '</optgroup>';
+                            }
+                            
+                            if (data.models.openai && data.models.openai.length > 0) {
+                                options += '<optgroup label="🟢 OpenAI">';
+                                data.models.openai.forEach(m => {
+                                    const selected = m.id === data.model_id ? 'selected' : '';
+                                    options += `<option value="${m.id}" ${selected} title="${m.description}">${m.name}</option>`;
+                                });
+                                options += '</optgroup>';
+                            }
+                            
+                            select.innerHTML = options;
+                        } else {
+                            switcher.style.display = 'none';
+                        }
+                    } else {
+                        statusDot.className = 'status-dot status-warning';
+                        providerName.textContent = 'Unavailable';
+                        content.style.display = 'none';
+                        unavailable.style.display = 'block';
+                        switcher.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    console.error('Thesis Lab status check failed:', error);
+                    document.getElementById('ai-status-dot').className = 'status-dot status-warning';
+                    document.getElementById('ai-provider-name').textContent = 'Error';
+                });
+        }
+        
+        // Switch AI model
+        function switchAIModel(modelId) {
+            const statusDot = document.getElementById('ai-status-dot');
+            const providerName = document.getElementById('ai-provider-name');
+            
+            statusDot.className = 'status-dot status-warning';
+            providerName.textContent = 'Switching...';
+            
+            fetch('/api/thesis-lab/switch-model', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_id: modelId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDot.className = 'status-dot status-active';
+                    providerName.textContent = data.provider;
+                } else {
+                    statusDot.className = 'status-dot status-warning';
+                    providerName.textContent = 'Error';
+                    alert('Failed to switch: ' + data.error);
+                    checkThesisLabStatus(); // Refresh to get correct state
+                }
+            })
+            .catch(error => {
+                console.error('Switch model failed:', error);
+                checkThesisLabStatus();
+            });
+        }
+        
+        // Tab switching
+        function switchThesisTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.thesis-tab-content').forEach(tab => {
+                tab.style.display = 'none';
+            });
+            
+            // Deactivate all buttons
+            document.querySelectorAll('.thesis-tab').forEach(btn => {
+                btn.classList.remove('active');
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+            });
+            
+            // Show selected tab
+            document.getElementById('tab-' + tabName).style.display = 'block';
+            
+            // Activate selected button
+            const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+                activeBtn.classList.add('btn-primary');
+                activeBtn.classList.remove('btn-secondary');
+            }
+        }
+        
+        // Discover Companies from Thesis
+        function runDiscover() {
+            const thesis = document.getElementById('discover-thesis').value.trim();
+            const resultDiv = document.getElementById('discover-result');
+            
+            if (!thesis) {
+                resultDiv.innerHTML = '<div style="color: var(--warning);">Please describe your investment thesis or sector idea</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">🔍 Discovering companies... This may take 30-60 seconds as I research the market.</div>';
+            
+            fetch('/api/thesis-lab/discover', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ thesis })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                    return;
+                }
+                
+                // Build companies table
+                let companiesHtml = '';
+                if (data.companies && data.companies.length > 0) {
+                    companiesHtml = data.companies.map(c => {
+                        const scoreColor = c.wheel_score >= 7 ? 'var(--success)' : c.wheel_score >= 5 ? 'var(--warning)' : 'var(--danger)';
+                        const verifiedBadge = c.verified ? 
+                            '<span style="font-size: 0.7rem; background: var(--success); color: white; padding: 0.1rem 0.3rem; border-radius: 3px; margin-left: 0.25rem;">✓ VERIFIED</span>' : 
+                            '<span style="font-size: 0.7rem; background: var(--warning); color: black; padding: 0.1rem 0.3rem; border-radius: 3px; margin-left: 0.25rem;">⚠ UNVERIFIED</span>';
+                        const optionsBadge = c.has_options ? 
+                            '<span style="font-size: 0.7rem; background: var(--primary); color: white; padding: 0.1rem 0.3rem; border-radius: 3px; margin-left: 0.25rem;">OPTIONS</span>' : '';
+                        const livePrice = c.current_price ? `$${c.current_price.toFixed(2)}` : '';
+                        
+                        return `
+                            <div style="background: #334155; border-radius: 8px; padding: 1rem; border-left: 4px solid ${scoreColor};">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                    <div>
+                                        <span style="font-size: 1.1rem; font-weight: bold;">${c.ticker}</span>
+                                        ${verifiedBadge}${optionsBadge}
+                                        <span style="color: var(--text-muted); margin-left: 0.5rem;">${c.name}</span>
+                                        <span style="font-size: 0.75rem; background: #475569; padding: 0.15rem 0.4rem; border-radius: 4px; margin-left: 0.5rem;">${c.market_cap_tier}</span>
+                                        ${livePrice ? `<span style="font-size: 0.85rem; color: var(--secondary); margin-left: 0.5rem;">${livePrice}</span>` : ''}
+                                    </div>
+                                    <span style="font-size: 1.1rem; color: ${scoreColor}; font-weight: bold;">${c.wheel_score}/10</span>
+                                </div>
+                                <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">${c.thesis_fit}</div>
+                                <div style="display: flex; gap: 1rem; font-size: 0.8rem; color: var(--text-muted);">
+                                    <span>🚀 ${c.key_catalyst}</span>
+                                    <span>⚠️ ${c.key_risk}</span>
+                                </div>
+                                <div style="margin-top: 0.5rem;">
+                                    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('quick-screen-ticker').value='${c.ticker}'; switchThesisTab('quick-screen'); runQuickScreen();">Quick Screen</button>
+                                    <button class="btn btn-primary btn-sm" onclick="document.getElementById('research-ticker').value='${c.ticker}'; document.getElementById('research-idea').value='${c.thesis_fit.replace(/'/g, "\\'")}'; switchThesisTab('full-research');">Full Research</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+                
+                // Build ETFs section
+                let etfsHtml = '';
+                if (data.etfs && data.etfs.length > 0) {
+                    etfsHtml = `
+                        <div style="margin-top: 1rem;">
+                            <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">📊 Related ETFs</h4>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                ${data.etfs.map(e => `
+                                    <div style="background: #334155; padding: 0.5rem 0.75rem; border-radius: 6px;">
+                                        <strong>${e.ticker}</strong> - ${e.name}
+                                        <div style="font-size: 0.8rem; color: var(--text-muted);">${e.description}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Build emerging players section
+                let emergingHtml = '';
+                if (data.emerging_players && data.emerging_players.length > 0) {
+                    emergingHtml = `
+                        <div style="margin-top: 1rem;">
+                            <h4 style="color: var(--accent); margin-bottom: 0.5rem;">🌱 Emerging Players (Watch List)</h4>
+                            <div style="font-size: 0.9rem; color: var(--text-muted);">${data.emerging_players.join(' • ')}</div>
+                        </div>
+                    `;
+                }
+                
+                resultDiv.innerHTML = `
+                    <div style="background: #0f172a; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border);">
+                        <!-- Header -->
+                        <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
+                            <h3 style="margin: 0 0 0.5rem 0; color: var(--primary);">📋 ${data.thesis_summary || 'Investment Thesis Analysis'}</h3>
+                            <p style="margin: 0; color: var(--text-muted);">${data.market_overview || ''}</p>
+                            <div style="display: flex; gap: 1rem; margin-top: 0.75rem; font-size: 0.9rem;">
+                                ${data.total_addressable_market ? `<span><strong>TAM:</strong> ${data.total_addressable_market}</span>` : ''}
+                                ${data.growth_outlook ? `<span><strong>Growth:</strong> <span style="color: ${data.growth_outlook === 'High' ? 'var(--success)' : data.growth_outlook === 'Medium' ? 'var(--warning)' : 'var(--text-muted)'}">${data.growth_outlook}</span></span>` : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Data Enrichment Info -->
+                        ${data.data_enrichment ? `
+                            <div style="margin-bottom: 1rem; padding: 0.5rem 0.75rem; background: rgba(34, 211, 238, 0.1); border-radius: 6px; font-size: 0.85rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+                                <span>📊 <strong>Live Data:</strong> ${data.data_enrichment.verified_tickers}/${data.data_enrichment.total_tickers} tickers verified</span>
+                                <span>📈 <strong>Options Available:</strong> ${data.data_enrichment.with_options} companies</span>
+                                <span style="color: var(--text-muted);">Source: ${data.data_enrichment.source}</span>
+                            </div>
+                        ` : ''}
+                        
+                        <!-- Companies -->
+                        <h4 style="color: var(--text-primary); margin-bottom: 0.75rem;">🏢 Companies (${data.companies ? data.companies.length : 0} found)</h4>
+                        <div style="display: grid; gap: 0.75rem;">
+                            ${companiesHtml || '<div style="color: var(--text-muted);">No companies found</div>'}
+                        </div>
+                        
+                        ${etfsHtml}
+                        ${emergingHtml}
+                        
+                        <!-- Recommendation -->
+                        ${data.recommended_focus ? `
+                            <div style="margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 8px; border-left: 4px solid var(--primary);">
+                                <strong style="color: var(--primary);">🎯 Recommended Focus for Wheel Strategy:</strong>
+                                <p style="margin: 0.5rem 0 0 0;">${data.recommended_focus}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+            });
+        }
+        
+        // Quick Screen
+        function runQuickScreen() {
+            const ticker = document.getElementById('quick-screen-ticker').value.toUpperCase();
+            const resultDiv = document.getElementById('quick-screen-result');
+            
+            if (!ticker) {
+                resultDiv.innerHTML = '<div style="color: var(--warning);">Please enter a ticker</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">🔍 Screening ' + ticker + '...</div>';
+            
+            fetch('/api/thesis-lab/quick-screen', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker: ticker })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                    return;
+                }
+                
+                const scoreColor = data.score >= 7 ? 'var(--success)' : data.score >= 5 ? 'var(--warning)' : 'var(--danger)';
+                const suitableIcon = data.wheel_suitable ? '✅' : '❌';
+                
+                resultDiv.innerHTML = `
+                    <div style="background: #334155; border-radius: 8px; padding: 1rem; border-left: 4px solid ${scoreColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <span style="font-size: 1.25rem; font-weight: bold;">${data.ticker}</span>
+                            <span style="font-size: 1.5rem; color: ${scoreColor}; font-weight: bold;">${data.score}/10</span>
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                            ${suitableIcon} Wheel Suitable: <strong>${data.wheel_suitable ? 'Yes' : 'No'}</strong>
+                        </div>
+                        <div style="margin-bottom: 0.5rem; color: var(--text-muted);">
+                            Current Price: ~${data.current_price}
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                            30-day ATM Put Premium: <strong>${data.premium_estimate}</strong>
+                        </div>
+                        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+                            ${data.summary}
+                        </div>
+                        ${data.key_concern ? `<div style="margin-top: 0.5rem; color: var(--warning);">⚠️ ${data.key_concern}</div>` : ''}
+                    </div>
+                `;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+            });
+        }
+        
+        // Full Research
+        function runFullResearch() {
+            const ticker = document.getElementById('research-ticker').value.toUpperCase();
+            const idea = document.getElementById('research-idea').value;
+            const sector = document.getElementById('research-sector').value;
+            const resultDiv = document.getElementById('full-research-result');
+            
+            if (!ticker || !idea) {
+                resultDiv.innerHTML = '<div style="color: var(--warning);">Please enter a ticker and describe your investment idea</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">🔬 Researching ' + ticker + '... This may take 30-60 seconds.</div>';
+            
+            fetch('/api/thesis-lab/research', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker, idea, sector, thesis_type: 'wheel' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                    return;
+                }
+                
+                const verdictColor = data.verdict === 'STRONG BUY' ? 'var(--success)' : 
+                                    data.verdict === 'BUY' ? '#22d3ee' :
+                                    data.verdict === 'HOLD' ? 'var(--warning)' : 'var(--danger)';
+                
+                const wheelScoreColor = data.wheel_fit.score >= 7 ? 'var(--success)' : 
+                                       data.wheel_fit.score >= 5 ? 'var(--warning)' : 'var(--danger)';
+                
+                resultDiv.innerHTML = `
+                    <div style="background: #0f172a; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border);">
+                        <!-- Header -->
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <h3 style="margin: 0; font-size: 1.5rem;">${data.ticker} - ${data.company_name}</h3>
+                                <div style="color: var(--text-muted); font-size: 0.9rem;">${data.sector}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: ${verdictColor};">${data.verdict}</div>
+                                <div style="font-size: 0.85rem; color: var(--text-muted);">${data.confidence}% confidence</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Summary -->
+                        <div style="margin-bottom: 1rem; padding: 1rem; background: #1e293b; border-radius: 8px;">
+                            <strong>Investment Thesis:</strong> ${data.summary}
+                        </div>
+                        
+                        <!-- Wheel Fit -->
+                        <div style="margin-bottom: 1rem; padding: 1rem; background: #1e293b; border-radius: 8px; border-left: 4px solid ${wheelScoreColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <strong>🎯 Wheel Strategy Fit</strong>
+                                <span style="font-size: 1.25rem; color: ${wheelScoreColor}; font-weight: bold;">${data.wheel_fit.score}/10</span>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; margin-top: 0.5rem;">
+                                <div><span style="color: var(--text-muted);">Strike Range:</span> ${data.wheel_fit.ideal_strike_range}</div>
+                                <div><span style="color: var(--text-muted);">DTE:</span> ${data.wheel_fit.suggested_dte} days</div>
+                                <div><span style="color: var(--text-muted);">Premium:</span> ${data.wheel_fit.premium_potential}</div>
+                            </div>
+                            <div style="margin-top: 0.5rem;">
+                                <span style="color: var(--success);">✓ ${data.wheel_fit.reasons_for.join(', ')}</span>
+                            </div>
+                            ${data.wheel_fit.reasons_against.length > 0 ? `<div style="margin-top: 0.25rem;"><span style="color: var(--warning);">⚠ ${data.wheel_fit.reasons_against.join(', ')}</span></div>` : ''}
+                        </div>
+                        
+                        <!-- Bull/Bear Cases -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                            <div style="padding: 1rem; background: rgba(16, 185, 129, 0.1); border-radius: 8px; border-left: 4px solid var(--success);">
+                                <strong style="color: var(--success);">📈 Bull Case</strong>
+                                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">${data.bull_case}</p>
+                            </div>
+                            <div style="padding: 1rem; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border-left: 4px solid var(--danger);">
+                                <strong style="color: var(--danger);">📉 Bear Case</strong>
+                                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">${data.bear_case}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Financials -->
+                        <div style="margin-bottom: 1rem; padding: 1rem; background: #1e293b; border-radius: 8px;">
+                            <strong>💰 Financial Health: ${data.financial_health.overall_rating}</strong>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; margin-top: 0.5rem; font-size: 0.9rem;">
+                                <div><span style="color: var(--text-muted);">D/E:</span> ${data.financial_health.debt_to_equity || 'N/A'}</div>
+                                <div><span style="color: var(--text-muted);">Revenue:</span> ${data.financial_health.revenue_growth}</div>
+                                <div><span style="color: var(--text-muted);">Margins:</span> ${data.financial_health.profit_margins}</div>
+                                <div><span style="color: var(--text-muted);">FCF:</span> ${data.financial_health.free_cash_flow}</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Risks & Catalysts -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <strong style="color: var(--warning);">⚠️ Key Risks</strong>
+                                <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0; font-size: 0.9rem;">
+                                    ${data.key_risks.map(r => `<li>${r}</li>`).join('')}
+                                </ul>
+                            </div>
+                            <div>
+                                <strong style="color: var(--secondary);">🚀 Catalysts</strong>
+                                <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0; font-size: 0.9rem;">
+                                    ${data.catalysts.map(c => `<li>${c}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted);">
+                            Researched ${data.research_date} via ${data.model_used}
+                        </div>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+            });
+        }
+        
+        // Compare tickers
+        function runCompare() {
+            const tickersInput = document.getElementById('compare-tickers').value;
+            const resultDiv = document.getElementById('compare-result');
+            
+            const tickers = tickersInput.split(',').map(t => t.trim().toUpperCase()).filter(t => t);
+            
+            if (tickers.length < 2) {
+                resultDiv.innerHTML = '<div style="color: var(--warning);">Please enter at least 2 tickers (comma-separated)</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">⚖️ Comparing ' + tickers.join(', ') + '...</div>';
+            
+            fetch('/api/thesis-lab/compare', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tickers })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                    return;
+                }
+                
+                let comparisonHtml = data.comparison.map((item, idx) => {
+                    const scoreColor = item.wheel_score >= 7 ? 'var(--success)' : item.wheel_score >= 5 ? 'var(--warning)' : 'var(--danger)';
+                    const rank = data.ranking.indexOf(item.ticker) + 1;
+                    const rankBadge = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
+                    
+                    return `
+                        <div style="background: #334155; border-radius: 8px; padding: 1rem; border-left: 4px solid ${scoreColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <span style="font-size: 1.1rem; font-weight: bold;">${rankBadge} ${item.ticker}</span>
+                                <span style="font-size: 1.25rem; color: ${scoreColor}; font-weight: bold;">${item.wheel_score}/10</span>
+                            </div>
+                            <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">${item.summary}</div>
+                            <div style="display: flex; gap: 1rem; font-size: 0.85rem;">
+                                <span>Premium: <strong>${item.premium_potential}</strong></span>
+                                <span>Risk: <strong>${item.risk_level}</strong></span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                resultDiv.innerHTML = `
+                    <div style="display: grid; gap: 1rem;">
+                        ${comparisonHtml}
+                        <div style="background: #1e293b; border-radius: 8px; padding: 1rem; margin-top: 0.5rem;">
+                            <strong>📊 Recommendation:</strong> ${data.recommendation}
+                        </div>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+            });
+        }
+        
+        // Chat with AI
+        let chatContext = '';
+        
+        function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const messagesDiv = document.getElementById('chat-messages');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Add user message
+            messagesDiv.innerHTML += `
+                <div style="margin-bottom: 1rem; text-align: right;">
+                    <div style="display: inline-block; background: var(--primary); color: white; padding: 0.75rem 1rem; border-radius: 12px 12px 0 12px; max-width: 80%;">${message}</div>
+                </div>
+            `;
+            
+            // Add loading indicator
+            const loadingId = 'loading-' + Date.now();
+            messagesDiv.innerHTML += `
+                <div id="${loadingId}" style="margin-bottom: 1rem;">
+                    <div style="display: inline-block; background: #334155; padding: 0.75rem 1rem; border-radius: 12px 12px 12px 0;">
+                        <span style="color: var(--text-muted);">Thinking...</span>
+                    </div>
+                </div>
+            `;
+            
+            // Scroll to bottom
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            // Clear input
+            input.value = '';
+            
+            fetch('/api/thesis-lab/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message, context: chatContext })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Remove loading indicator
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+                
+                if (data.error) {
+                    messagesDiv.innerHTML += `
+                        <div style="margin-bottom: 1rem;">
+                            <div style="display: inline-block; background: rgba(239, 68, 68, 0.2); color: var(--danger); padding: 0.75rem 1rem; border-radius: 12px 12px 12px 0;">Error: ${data.error}</div>
+                        </div>
+                    `;
+                } else {
+                    // Update context
+                    chatContext = message + '\n' + data.response;
+                    
+                    // Add AI response
+                    messagesDiv.innerHTML += `
+                        <div style="margin-bottom: 1rem;">
+                            <div style="display: inline-block; background: #334155; padding: 0.75rem 1rem; border-radius: 12px 12px 12px 0; max-width: 80%;">${data.response.replace(/\n/g, '<br>')}</div>
+                        </div>
+                    `;
+                }
+                
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            })
+            .catch(error => {
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+                messagesDiv.innerHTML += `
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: inline-block; background: rgba(239, 68, 68, 0.2); color: var(--danger); padding: 0.75rem 1rem; border-radius: 12px 12px 12px 0;">Error: ${error.message}</div>
+                    </div>
+                `;
+            });
+        }
+        
+        // Initialize Thesis Lab on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkThesisLabStatus();
+        });
 
         // Update win streak management
         function updateWinStreak(winStreakData) {
@@ -1318,6 +2289,177 @@
             });
         }
 
+        // ============================================
+        // DTE Alerts Functions
+        // ============================================
+        
+        function checkDTEAlerts() {
+            const container = document.getElementById('dte-alerts-container');
+            const emailBtn = document.getElementById('send-dte-email-btn');
+            
+            container.innerHTML = '<div style="color: var(--text-secondary);"><i class="fas fa-spinner fa-spin"></i> Checking positions...</div>';
+            emailBtn.disabled = true;
+            
+            fetch('/api/dte-alerts')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                        return;
+                    }
+                    
+                    const alerts = data.alerts || [];
+                    
+                    if (alerts.length === 0) {
+                        container.innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle"></i> No positions approaching expiration (DTE > 7)</div>';
+                        emailBtn.disabled = true;
+                        return;
+                    }
+                    
+                    // Build alerts display
+                    let html = `<div class="alert alert-warning" style="margin-bottom: 0.5rem;"><strong>${alerts.length}</strong> position(s) with DTE ≤ 7</div>`;
+                    html += '<div style="font-size: 0.85rem;">';
+                    
+                    alerts.forEach(alert => {
+                        const urgencyColor = alert.urgency === 'CRITICAL' ? '#ef4444' : alert.urgency === 'URGENT' ? '#f59e0b' : '#3b82f6';
+                        const urgencyIcon = alert.urgency === 'CRITICAL' ? '🚨' : alert.urgency === 'URGENT' ? '⚠️' : '📋';
+                        const pnlColor = alert.pnl_pct >= 0 ? 'var(--success)' : 'var(--danger)';
+                        
+                        html += `<div style="padding: 0.5rem; margin-bottom: 0.25rem; background: rgba(255,255,255,0.05); border-radius: 4px; border-left: 3px solid ${urgencyColor};">`;
+                        html += `<div><strong>${urgencyIcon} ${alert.symbol}</strong> - ${alert.position_type}</div>`;
+                        html += `<div style="color: var(--text-secondary);">Strike: $${alert.strike.toFixed(2)} | Exp: ${alert.expiry} (<strong>${alert.dte} days</strong>)</div>`;
+                        html += `<div style="color: ${pnlColor};">P&L: ${alert.pnl_pct >= 0 ? '+' : ''}${alert.pnl_pct.toFixed(1)}%</div>`;
+                        html += '</div>';
+                    });
+                    
+                    html += '</div>';
+                    container.innerHTML = html;
+                    emailBtn.disabled = false;
+                    
+                    // Store for email
+                    window.lastDTEAlerts = alerts;
+                })
+                .catch(error => {
+                    console.error('Error checking DTE:', error);
+                    container.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                });
+        }
+        
+        function sendDTEAlertEmail() {
+            const btn = document.getElementById('send-dte-email-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+            btn.disabled = true;
+            
+            fetch('/api/dte-alerts/send', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Failed to send email: ' + data.error);
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                        return;
+                    }
+                    
+                    btn.innerHTML = '<i class="fas fa-check"></i> Sent!';
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    }, 3000);
+                })
+                .catch(error => {
+                    alert('Error: ' + error.message);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                });
+        }
+        
+        // ============================================
+        // Morning Scanner Functions
+        // ============================================
+        
+        function runMorningScan() {
+            const container = document.getElementById('scanner-results-container');
+            const emailBtn = document.getElementById('send-scan-email-btn');
+            
+            container.innerHTML = '<div style="color: var(--text-secondary);"><i class="fas fa-spinner fa-spin"></i> Scanning watchlist for CSP opportunities...</div>';
+            emailBtn.disabled = true;
+            
+            fetch('/api/morning-scan')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                        return;
+                    }
+                    
+                    const candidates = data.candidates || [];
+                    
+                    if (candidates.length === 0) {
+                        container.innerHTML = '<div class="alert alert-info"><i class="fas fa-info-circle"></i> No CSP candidates found meeting criteria</div>';
+                        emailBtn.disabled = true;
+                        return;
+                    }
+                    
+                    // Build results display
+                    let html = `<div class="alert alert-success" style="margin-bottom: 0.5rem;"><strong>${candidates.length}</strong> CSP opportunities found</div>`;
+                    html += '<div style="font-size: 0.85rem;">';
+                    
+                    candidates.slice(0, 5).forEach((c, i) => {
+                        html += `<div style="padding: 0.5rem; margin-bottom: 0.25rem; background: rgba(255,255,255,0.05); border-radius: 4px;">`;
+                        html += `<div><strong>${i+1}. ${c.symbol}</strong> - CSP @ $${c.strike.toFixed(0)}</div>`;
+                        html += `<div style="color: var(--text-secondary);">Stock: $${c.stock_price.toFixed(2)} | OTM: ${c.otm_pct.toFixed(1)}%</div>`;
+                        html += `<div>Premium: $${c.premium.toFixed(2)} | <span style="color: var(--success);">📈 ${c.annual_return.toFixed(1)}% annual</span></div>`;
+                        html += `<div style="color: var(--text-secondary);">Exp: ${c.expiry} (${c.dte} days) | Capital: $${c.capital_required.toLocaleString()}</div>`;
+                        html += '</div>';
+                    });
+                    
+                    if (candidates.length > 5) {
+                        html += `<div style="color: var(--text-secondary); text-align: center; padding: 0.5rem;">+ ${candidates.length - 5} more...</div>`;
+                    }
+                    
+                    html += '</div>';
+                    container.innerHTML = html;
+                    emailBtn.disabled = false;
+                    
+                    // Store for email
+                    window.lastScanResults = candidates;
+                })
+                .catch(error => {
+                    console.error('Error in scan:', error);
+                    container.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                });
+        }
+        
+        function sendScanEmail() {
+            const btn = document.getElementById('send-scan-email-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+            btn.disabled = true;
+            
+            fetch('/api/morning-scan/email', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Failed to send email: ' + data.error);
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                        return;
+                    }
+                    
+                    btn.innerHTML = '<i class="fas fa-check"></i> Sent!';
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    }, 3000);
+                })
+                .catch(error => {
+                    alert('Error: ' + error.message);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                });
+        }
+
         // Update income tracking
         function updateIncomeTracking(incomeData) {
             if (!incomeData) return;
@@ -1725,8 +2867,10 @@
 
         // Initial data load
         window.onload = function() {
-            // Initialize chart
+            // Initialize charts
             initPortfolioChart();
+            initBenchmarkChart();
+            initBenchmarkControls();
             
             // Update system status
             updateSystemStatus();
@@ -1759,6 +2903,9 @@
                     updatePortfolioChart(data);
                 })
                 .catch(error => console.error('Error fetching chart data:', error));
+            
+            // Fetch benchmark comparison data (default: 3 months, SPY)
+            fetchBenchmarkComparison('3m', 'SPY');
             
             // Fetch sector exposure data
             fetch('/api/sector-exposure')
@@ -1813,6 +2960,15 @@
                     updateRealizedPnl(data);
                 })
                 .catch(error => console.error('Error fetching realized P&L data:', error));
+            
+            // Fetch position sizing data
+            fetch('/api/position-sizing')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Position sizing data:', data);
+                    updatePositionSizing(data);
+                })
+                .catch(error => console.error('Error fetching position sizing data:', error));
             
             // Fetch premium tracking data
             fetch('/api/premium-tracking')
@@ -2283,6 +3439,113 @@
                     </div>
                 </div>
                 
+                <!-- Benchmark Comparison -->
+                <div class="card" id="benchmark-card">
+                    <div class="card-header">
+                        <h2>📊 Benchmark Comparison</h2>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <select id="benchmark-ticker" style="width: 80px;">
+                                <option value="SPY" selected>SPY</option>
+                                <option value="QQQ">QQQ</option>
+                                <option value="IWM">IWM</option>
+                                <option value="DIA">DIA</option>
+                            </select>
+                            <div class="btn-group" id="benchmark-period-selector">
+                                <button class="btn btn-sm btn-secondary" data-period="1m">1M</button>
+                                <button class="btn btn-sm btn-primary" data-period="3m">3M</button>
+                                <button class="btn btn-sm btn-secondary" data-period="6m">6M</button>
+                                <button class="btn btn-sm btn-secondary" data-period="ytd">YTD</button>
+                                <button class="btn btn-sm btn-secondary" data-period="1y">1Y</button>
+                                <button class="btn btn-sm btn-secondary" data-period="all">All</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Performance Stats -->
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                        <div class="metric-card">
+                            <div class="metric-label">Your Return</div>
+                            <div id="benchmark-portfolio-return" class="metric-value" style="color: #2a9d8f;">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label"><span id="benchmark-ticker-label">SPY</span> Return</div>
+                            <div id="benchmark-spy-return" class="metric-value" style="color: #6c757d;">--</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Alpha</div>
+                            <div id="benchmark-alpha" class="metric-value" style="color: #fbbf24;">--</div>
+                            <div class="section-label">Excess return vs benchmark</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Status</div>
+                            <div id="benchmark-status" class="metric-value" style="font-size: 1rem;">--</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Comparison Chart -->
+                    <div class="chart-container" style="height: 280px;">
+                        <canvas id="benchmark-chart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Position Sizing & Buying Power -->
+                <div class="card" id="position-sizing-card">
+                    <div class="card-header">
+                        <h2>💰 Position Sizing</h2>
+                        <div>
+                            <span id="position-sizing-status" class="badge-market badge-success">Loading...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-grid" style="margin-bottom: 1rem;">
+                        <div class="metric-card">
+                            <div class="metric-label">Buying Power</div>
+                            <div id="buying-power" class="metric-value" style="color: #2a9d8f;">Loading...</div>
+                            <div class="section-label">Available for new trades</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Max Position Size</div>
+                            <div id="max-position-size" class="metric-value">Loading...</div>
+                            <div id="max-position-pct" class="section-label">10% of buying power</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Max New Trade</div>
+                            <div id="max-new-trade" class="metric-value" style="color: #5bc0be;">Loading...</div>
+                            <div class="section-label">Available capacity</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Excess Liquidity</div>
+                            <div id="excess-liquidity" class="metric-value">Loading...</div>
+                            <div class="section-label">Margin cushion</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Sector Usage Bars -->
+                    <div style="margin-top: 1rem;">
+                        <h3 style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--text-primary);">Sector Allocation vs Limits</h3>
+                        <div id="sector-usage-bars">
+                            <div style="color: var(--text-muted); font-style: italic;">Loading sector data...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Trade Calculator -->
+                    <div style="margin-top: 1rem; padding: 1rem; background-color: #334155; border-radius: 8px; border: 1px solid var(--border);">
+                        <h3 style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--text-primary);">🧮 Quick Trade Check</h3>
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-muted);">Strike Price:</label>
+                                <input type="number" id="trade-check-strike" placeholder="150" style="width: 80px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; color: var(--text-muted);">Contracts:</label>
+                                <input type="number" id="trade-check-contracts" value="1" min="1" style="width: 60px;">
+                            </div>
+                            <button onclick="checkTrade()" class="btn btn-primary btn-sm">Check</button>
+                            <div id="trade-check-result" style="font-weight: bold; margin-left: 1rem;"></div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Active Positions -->
                 <div class="card">
                     <div class="card-header">
@@ -2360,6 +3623,116 @@
                         <div id="decision-breakdown">
                             <div class="section-label">Loading breakdown...</div>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Investment Thesis Lab -->
+                <div class="card" id="thesis-lab-card">
+                    <div class="card-header">
+                        <h2>🧪 Investment Thesis Lab</h2>
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <div id="model-switcher" style="display: none;">
+                                <select id="ai-model-select" onchange="switchAIModel(this.value)" style="padding: 0.35rem 0.5rem; font-size: 0.8rem; min-width: 140px;">
+                                </select>
+                            </div>
+                            <div class="status-indicator">
+                                <div class="status-dot" id="ai-status-dot"></div>
+                                <span id="ai-provider-name" style="font-size: 0.85rem;">Checking AI...</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="thesis-lab-content">
+                        <!-- Mode Tabs -->
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+                            <button class="btn btn-primary btn-sm thesis-tab active" data-tab="discover" onclick="switchThesisTab('discover')">🔍 Discover</button>
+                            <button class="btn btn-secondary btn-sm thesis-tab" data-tab="quick-screen" onclick="switchThesisTab('quick-screen')">Quick Screen</button>
+                            <button class="btn btn-secondary btn-sm thesis-tab" data-tab="full-research" onclick="switchThesisTab('full-research')">Full Research</button>
+                            <button class="btn btn-secondary btn-sm thesis-tab" data-tab="compare" onclick="switchThesisTab('compare')">Compare</button>
+                            <button class="btn btn-secondary btn-sm thesis-tab" data-tab="chat" onclick="switchThesisTab('chat')">Chat</button>
+                        </div>
+                        
+                        <!-- Discover Tab (Default) -->
+                        <div id="tab-discover" class="thesis-tab-content">
+                            <div style="margin-bottom: 1rem;">
+                                <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Describe your investment thesis, sector idea, or trend</label>
+                                <textarea id="discover-thesis" placeholder="Example: Micro nuclear reactors seem like the only viable way to power increasing AI data center demand. I want to find companies building small modular reactors (SMRs) or providing nuclear fuel/services to this emerging sector..." rows="4" style="width: 100%; background-color: #334155; border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; padding: 0.75rem;"></textarea>
+                            </div>
+                            <button class="btn btn-primary" onclick="runDiscover()">🔍 Discover Companies</button>
+                            <div id="discover-result" style="margin-top: 1rem;"></div>
+                        </div>
+                        
+                        <!-- Quick Screen Tab -->
+                        <div id="tab-quick-screen" class="thesis-tab-content" style="display: none;">
+                            <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                                <div style="flex: 1; min-width: 150px;">
+                                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Ticker Symbol</label>
+                                    <input type="text" id="quick-screen-ticker" placeholder="AAPL" style="width: 100%; text-transform: uppercase;">
+                                </div>
+                                <button class="btn btn-primary" onclick="runQuickScreen()">Screen</button>
+                            </div>
+                            <div id="quick-screen-result" style="margin-top: 1rem;"></div>
+                        </div>
+                        
+                        <!-- Full Research Tab -->
+                        <div id="tab-full-research" class="thesis-tab-content" style="display: none;">
+                            <div style="display: grid; gap: 1rem;">
+                                <div>
+                                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Ticker Symbol</label>
+                                    <input type="text" id="research-ticker" placeholder="AAPL" style="width: 100%; text-transform: uppercase;">
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">What's Your Investment Idea?</label>
+                                    <textarea id="research-idea" placeholder="e.g., I think Apple is undervalued due to their new AI initiatives. Services revenue is growing and they have massive cash reserves..." rows="3" style="width: 100%; background-color: #334155; border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; padding: 0.5rem;"></textarea>
+                                </div>
+                                <div style="display: flex; gap: 1rem;">
+                                    <div style="flex: 1;">
+                                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Sector (optional)</label>
+                                        <select id="research-sector" style="width: 100%;">
+                                            <option value="">Auto-detect</option>
+                                            <option value="Technology">Technology</option>
+                                            <option value="Financial">Financial</option>
+                                            <option value="Healthcare">Healthcare</option>
+                                            <option value="Consumer">Consumer</option>
+                                            <option value="Energy">Energy</option>
+                                            <option value="Industrial">Industrial</option>
+                                            <option value="Materials">Materials</option>
+                                            <option value="Utilities">Utilities</option>
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-primary" onclick="runFullResearch()" style="align-self: flex-end;">Research</button>
+                                </div>
+                            </div>
+                            <div id="full-research-result" style="margin-top: 1rem;"></div>
+                        </div>
+                        
+                        <!-- Compare Tab -->
+                        <div id="tab-compare" class="thesis-tab-content" style="display: none;">
+                            <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                                <div style="flex: 1; min-width: 200px;">
+                                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Tickers (comma-separated)</label>
+                                    <input type="text" id="compare-tickers" placeholder="AAPL, MSFT, GOOG" style="width: 100%; text-transform: uppercase;">
+                                </div>
+                                <button class="btn btn-primary" onclick="runCompare()">Compare</button>
+                            </div>
+                            <div id="compare-result" style="margin-top: 1rem;"></div>
+                        </div>
+                        
+                        <!-- Chat Tab -->
+                        <div id="tab-chat" class="thesis-tab-content" style="display: none;">
+                            <div id="chat-messages" style="max-height: 300px; overflow-y: auto; margin-bottom: 1rem; padding: 1rem; background-color: #0f172a; border-radius: 8px; border: 1px solid var(--border);">
+                                <div style="color: var(--text-muted); font-style: italic;">Ask me anything about stocks, options, the wheel strategy, or your investment ideas...</div>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <input type="text" id="chat-input" placeholder="Ask a question..." style="flex: 1;" onkeypress="if(event.key==='Enter') sendChatMessage()">
+                                <button class="btn btn-primary" onclick="sendChatMessage()">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="thesis-lab-unavailable" style="display: none; padding: 1rem; text-align: center; color: var(--text-muted);">
+                        <p>🔌 AI Research not available</p>
+                        <p style="font-size: 0.85rem;">Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your .env file</p>
                     </div>
                 </div>
             </div>
@@ -2502,6 +3875,45 @@
                                     <strong id="next-workflow-time">Loading...</strong>
                                     <div id="next-workflow-description">Loading workflow details...</div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Scanner & Alerts -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>🔧 Tools & Alerts</h2>
+                        </div>
+                        
+                        <!-- DTE Alerts Section -->
+                        <div style="margin-bottom: 1.5rem;">
+                            <div class="section-label">⏰ DTE Alerts</div>
+                            <div id="dte-alerts-container" style="margin-bottom: 0.75rem;">
+                                <div style="color: var(--text-secondary);">Click "Check DTE" to scan positions</div>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn btn-primary btn-sm" onclick="checkDTEAlerts()">
+                                    <i class="fas fa-clock"></i> Check DTE
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="sendDTEAlertEmail()" id="send-dte-email-btn" disabled>
+                                    <i class="fas fa-envelope"></i> Email Alerts
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Morning Scanner Section -->
+                        <div>
+                            <div class="section-label">🌅 Morning Scanner</div>
+                            <div id="scanner-results-container" style="margin-bottom: 0.75rem; max-height: 200px; overflow-y: auto;">
+                                <div style="color: var(--text-secondary);">Click "Run Scan" to find CSP opportunities</div>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn btn-primary btn-sm" onclick="runMorningScan()">
+                                    <i class="fas fa-search"></i> Run Scan
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="sendScanEmail()" id="send-scan-email-btn" disabled>
+                                    <i class="fas fa-envelope"></i> Email Results
+                                </button>
                             </div>
                         </div>
                     </div>

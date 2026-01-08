@@ -31,6 +31,19 @@ import concurrent.futures
 import queue
 import math
 
+# Database module for trade persistence
+try:
+    import db as trade_db
+    DB_AVAILABLE = trade_db.test_connection()
+    if DB_AVAILABLE:
+        print("✅ PostgreSQL database connected")
+    else:
+        print("⚠️ PostgreSQL database not available - trades won't be persisted")
+except ImportError:
+    DB_AVAILABLE = False
+    trade_db = None
+    print("⚠️ Database module not available - install psycopg2-binary")
+
 # --- Robust global cache helpers ---
 def get_current_metrics():
     global current_metrics
@@ -2698,59 +2711,8 @@ class PerformanceTracker:
         self.realized_pnl_history = []
         self.unrealized_pnl_history = []
         
-        # Add some sample trade data for testing realized P&L tracking
-        self._add_sample_trades()
-    
-    def _add_sample_trades(self):
-        """Add sample trades for testing realized P&L tracking"""
-        sample_trades = [
-            {
-                'id': 'trade_001',
-                'symbol': 'AAPL',
-                'action': 'SELL_PUT',
-                'timestamp': datetime.now() - timedelta(days=2),
-                'premium': 2.50,
-                'quantity': 1,
-                'realized_pnl': 250.0,
-                'status': 'CLOSED',
-                'close_date': datetime.now() - timedelta(days=1),
-                'is_sample': True  # Mark as sample data
-            },
-            {
-                'id': 'trade_002',
-                'symbol': 'SPY',
-                'action': 'SELL_PUT',
-                'timestamp': datetime.now() - timedelta(days=1),
-                'premium': 1.75,
-                'quantity': 2,
-                'realized_pnl': 350.0,
-                'status': 'CLOSED',
-                'close_date': datetime.now(),
-                'is_sample': True  # Mark as sample data
-            },
-            {
-                'id': 'trade_003',
-                'symbol': 'NVDA',
-                'action': 'SELL_CALL',
-                'timestamp': datetime.now(),
-                'premium': 3.20,
-                'quantity': 1,
-                'realized_pnl': 0.0,  # Still open
-                'status': 'OPEN',
-                'is_sample': True  # Mark as sample data
-            }
-        ]
-        
-        for trade in sample_trades:
-            self.trades.append(trade)
-            if trade['status'] == 'CLOSED':
-                self.realized_pnl_history.append({
-                    'trade_id': trade['id'],
-                    'realized_pnl': trade['realized_pnl'],
-                    'close_date': trade['close_date'],
-                    'timestamp': trade['close_date'],
-                    'is_sample': True  # Mark as sample data
-                })
+        # Sample trades removed - use real trade data from IBKR/Postgres
+        # Trade history can be recorded via log_trade() or loaded from database
         
     def log_trade(self, trade: Dict):
         """Log executed trade for tracking"""
@@ -3448,6 +3410,339 @@ SECTOR ANALYSIS
         import re
         text = re.sub('<[^<]+?>', '', html)
         return text
+
+# -------------------------------------------------------------
+# DTE Alert System - Alert when options approach expiration
+# -------------------------------------------------------------
+
+class DTEAlertChecker:
+    """Check positions for approaching expiration and send alerts"""
+    
+    def __init__(self, monitor, alert_manager, config):
+        self.monitor = monitor
+        self.alert_manager = alert_manager
+        self.config = config
+        self.dte_threshold = 7  # Alert when DTE < 7
+        self.alert_sent_today = {}  # Track alerts to avoid duplicates
+        
+    def check_dte_alerts(self) -> List[Dict]:
+        """Check all option positions for low DTE and return alerts"""
+        alerts = []
+        
+        try:
+            # Get LIVE positions from IBKR
+            if not self.monitor.ib or not self.monitor.ib.isConnected():
+                logger.warning("IBKR not connected - cannot check DTE alerts")
+                return alerts
+            
+            portfolio_items = self.monitor.ib.portfolio()
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            for item in portfolio_items:
+                if item.position == 0:
+                    continue
+                    
+                contract = item.contract
+                
+                # Skip stocks - only check options
+                if getattr(contract, 'right', '0') == '0':
+                    continue
+                
+                # Calculate DTE
+                expiry_str = getattr(contract, 'lastTradeDateOrContractMonth', '')
+                if not expiry_str:
+                    continue
+                    
+                try:
+                    expiry_date = datetime.strptime(expiry_str, '%Y%m%d')
+                    dte = (expiry_date - datetime.now()).days
+                except:
+                    continue
+                
+                # Check if DTE is below threshold
+                if dte <= self.dte_threshold and dte >= 0:
+                    symbol = contract.symbol
+                    alert_key = f"{symbol}_{expiry_str}_{today}"
+                    
+                    # Skip if already alerted today
+                    if alert_key in self.alert_sent_today:
+                        continue
+                    
+                    # Determine position type
+                    right = getattr(contract, 'right', '?')
+                    strike = getattr(contract, 'strike', 0)
+                    pos_type = 'PUT' if right == 'P' else 'CALL' if right == 'C' else 'OPTION'
+                    direction = 'SHORT' if item.position < 0 else 'LONG'
+                    
+                    # Calculate P&L
+                    pnl_pct = (item.unrealizedPNL / abs(item.averageCost) * 100) if item.averageCost != 0 else 0
+                    
+                    # Determine urgency
+                    if dte <= 1:
+                        urgency = "🚨 CRITICAL"
+                        priority = AlertPriority.CRITICAL
+                    elif dte <= 3:
+                        urgency = "⚠️ URGENT"
+                        priority = AlertPriority.IMPORTANT
+                    else:
+                        urgency = "📋 NOTICE"
+                        priority = AlertPriority.INFO
+                    
+                    alert_data = {
+                        'symbol': symbol,
+                        'position_type': f"{direction} {pos_type}",
+                        'strike': strike,
+                        'expiry': expiry_date.strftime('%b %d, %Y'),
+                        'dte': dte,
+                        'quantity': abs(item.position),
+                        'pnl_pct': round(pnl_pct, 1),
+                        'market_value': item.marketValue,
+                        'urgency': urgency,
+                        'priority': priority,
+                        'action_suggestion': self._suggest_action(direction, pos_type, dte, pnl_pct)
+                    }
+                    
+                    alerts.append(alert_data)
+                    self.alert_sent_today[alert_key] = True
+                    
+            logger.info(f"DTE Alert Check: Found {len(alerts)} positions with DTE <= {self.dte_threshold}")
+            return alerts
+            
+        except Exception as e:
+            logger.error(f"Error checking DTE alerts: {e}")
+            return []
+    
+    def _suggest_action(self, direction: str, pos_type: str, dte: int, pnl_pct: float) -> str:
+        """Suggest action based on position characteristics"""
+        if direction == 'SHORT':
+            if pnl_pct > 50:
+                return "Consider closing for profit (>50% gain)"
+            elif dte <= 1:
+                return "EXPIRATION IMMINENT - Decide: Close, roll, or let expire"
+            elif dte <= 3:
+                return "Evaluate roll opportunity to extend duration"
+            else:
+                return "Monitor closely - approaching expiration"
+        else:  # LONG
+            if pnl_pct > 50:
+                return "Consider taking profit (>50% gain)"
+            elif pnl_pct < -30:
+                return "Consider cutting loss or rolling"
+            else:
+                return "Decide: Exercise, sell, or let expire"
+    
+    async def send_dte_alerts(self, alerts: List[Dict]) -> bool:
+        """Send DTE alerts via email"""
+        if not alerts:
+            return False
+        
+        try:
+            # Build email content
+            subject = f"🔔 DTE Alert: {len(alerts)} position(s) approaching expiration"
+            
+            body = "WHEEL STRATEGY - DTE ALERT\n"
+            body += "=" * 50 + "\n\n"
+            body += f"The following positions have DTE <= {self.dte_threshold} days:\n\n"
+            
+            for alert in alerts:
+                body += f"{alert['urgency']} {alert['symbol']}\n"
+                body += f"  Position: {alert['position_type']} @ ${alert['strike']:.2f}\n"
+                body += f"  Expiry: {alert['expiry']} ({alert['dte']} days)\n"
+                body += f"  Qty: {alert['quantity']} | P&L: {alert['pnl_pct']:+.1f}%\n"
+                body += f"  💡 {alert['action_suggestion']}\n\n"
+            
+            body += "-" * 50 + "\n"
+            body += "Sent by Wheel Strategy Dashboard\n"
+            
+            # Create alert object
+            alert_obj = Alert(
+                priority=alerts[0]['priority'],  # Use highest priority
+                title=subject,
+                message=body,
+                action_required="Review and take action before expiration"
+            )
+            
+            await self.alert_manager.send_alert(alert_obj)
+            logger.info(f"✅ Sent DTE alert for {len(alerts)} positions")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send DTE alerts: {e}")
+            return False
+
+# -------------------------------------------------------------
+# Morning Scanner - Find wheel candidates
+# -------------------------------------------------------------
+
+class MorningScanner:
+    """Scan for wheel strategy opportunities each morning"""
+    
+    def __init__(self, monitor, config):
+        self.monitor = monitor
+        self.config = config
+        self.watchlist = config.get('symbols', [])
+        
+        # Scanning criteria
+        self.min_iv_rank = 30  # Minimum IV rank (percentile)
+        self.target_delta = -0.30  # Target delta for CSPs
+        self.delta_range = 0.10  # +/- from target
+        self.min_annual_return = 0.15  # 15% minimum annualized return
+        self.target_dte_min = 30  # Minimum DTE
+        self.target_dte_max = 45  # Maximum DTE
+        
+    def scan_csp_candidates(self) -> List[Dict]:
+        """Scan for Cash-Secured Put candidates"""
+        candidates = []
+        
+        try:
+            if not self.monitor.ib or not self.monitor.ib.isConnected():
+                logger.warning("IBKR not connected - cannot scan for CSP candidates")
+                return candidates
+            
+            logger.info(f"🔍 Morning Scanner: Checking {len(self.watchlist)} symbols for CSP opportunities...")
+            
+            for symbol in self.watchlist:
+                try:
+                    # Get current stock price
+                    stock = Stock(symbol, 'SMART', 'USD')
+                    self.monitor.ib.qualifyContracts(stock)
+                    
+                    ticker = self.monitor.ib.reqMktData(stock, '', False, False)
+                    self.monitor.ib.sleep(0.5)  # Wait for data
+                    
+                    stock_price = ticker.marketPrice()
+                    if not stock_price or stock_price <= 0:
+                        continue
+                    
+                    # Find put options in target DTE range
+                    chains = self.monitor.ib.reqSecDefOptParams(symbol, '', 'STK', stock.conId)
+                    if not chains:
+                        continue
+                    
+                    # Get the first chain (usually SMART exchange)
+                    chain = chains[0]
+                    
+                    # Find expiry in target range
+                    target_expiry = None
+                    for expiry in sorted(chain.expirations):
+                        try:
+                            exp_date = datetime.strptime(expiry, '%Y%m%d')
+                            dte = (exp_date - datetime.now()).days
+                            if self.target_dte_min <= dte <= self.target_dte_max:
+                                target_expiry = expiry
+                                break
+                        except:
+                            continue
+                    
+                    if not target_expiry:
+                        continue
+                    
+                    # Find OTM put at target delta
+                    # Target strike ~5-10% below current price
+                    target_strike = round(stock_price * 0.95, 0)  # 5% OTM
+                    
+                    # Find closest strike
+                    strikes = [s for s in chain.strikes if s < stock_price * 0.98]  # OTM puts
+                    if not strikes:
+                        continue
+                    
+                    closest_strike = min(strikes, key=lambda x: abs(x - target_strike))
+                    
+                    # Create option contract
+                    put = Option(symbol, target_expiry, closest_strike, 'P', 'SMART')
+                    self.monitor.ib.qualifyContracts(put)
+                    
+                    # Get option price
+                    opt_ticker = self.monitor.ib.reqMktData(put, '', False, False)
+                    self.monitor.ib.sleep(0.5)
+                    
+                    bid = opt_ticker.bid if opt_ticker.bid and opt_ticker.bid > 0 else 0
+                    ask = opt_ticker.ask if opt_ticker.ask and opt_ticker.ask > 0 else 0
+                    mid_price = (bid + ask) / 2 if bid and ask else 0
+                    
+                    if mid_price <= 0:
+                        continue
+                    
+                    # Calculate metrics
+                    exp_date = datetime.strptime(target_expiry, '%Y%m%d')
+                    dte = (exp_date - datetime.now()).days
+                    
+                    # Premium yield = premium / strike price
+                    premium_yield = (mid_price / closest_strike) * 100
+                    
+                    # Annualized return
+                    annual_return = (premium_yield * 365 / dte) if dte > 0 else 0
+                    
+                    # Get delta if available
+                    delta = None
+                    if opt_ticker.modelGreeks:
+                        delta = opt_ticker.modelGreeks.delta
+                    
+                    # Check if meets criteria
+                    if annual_return >= self.min_annual_return * 100:
+                        candidates.append({
+                            'symbol': symbol,
+                            'stock_price': round(stock_price, 2),
+                            'strike': closest_strike,
+                            'expiry': exp_date.strftime('%b %d, %Y'),
+                            'dte': dte,
+                            'premium': round(mid_price, 2),
+                            'bid': round(bid, 2),
+                            'ask': round(ask, 2),
+                            'delta': round(delta, 3) if delta else None,
+                            'premium_yield': round(premium_yield, 2),
+                            'annual_return': round(annual_return, 1),
+                            'capital_required': closest_strike * 100,
+                            'breakeven': round(closest_strike - mid_price, 2),
+                            'otm_pct': round((1 - closest_strike / stock_price) * 100, 1)
+                        })
+                    
+                    # Cancel market data
+                    self.monitor.ib.cancelMktData(stock)
+                    self.monitor.ib.cancelMktData(put)
+                    
+                except Exception as e:
+                    logger.debug(f"Error scanning {symbol}: {e}")
+                    continue
+            
+            # Sort by annual return descending
+            candidates.sort(key=lambda x: x['annual_return'], reverse=True)
+            
+            logger.info(f"✅ Morning Scanner: Found {len(candidates)} CSP candidates")
+            return candidates
+            
+        except Exception as e:
+            logger.error(f"Error in morning scanner: {e}")
+            return []
+    
+    def format_scan_report(self, candidates: List[Dict]) -> str:
+        """Format scan results as text report"""
+        if not candidates:
+            return "No CSP candidates found meeting criteria."
+        
+        report = "🌅 MORNING WHEEL SCANNER REPORT\n"
+        report += "=" * 50 + "\n"
+        report += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        report += f"Criteria: DTE {self.target_dte_min}-{self.target_dte_max}, Min Return {self.min_annual_return*100:.0f}%\n\n"
+        
+        report += f"Found {len(candidates)} opportunities:\n\n"
+        
+        for i, c in enumerate(candidates[:10], 1):  # Top 10
+            report += f"{i}. {c['symbol']} - CSP @ ${c['strike']:.0f}\n"
+            report += f"   Stock: ${c['stock_price']:.2f} | OTM: {c['otm_pct']:.1f}%\n"
+            report += f"   Premium: ${c['premium']:.2f} (${c['bid']:.2f}-${c['ask']:.2f})\n"
+            report += f"   Expiry: {c['expiry']} ({c['dte']} days)\n"
+            report += f"   📈 Annual Return: {c['annual_return']:.1f}%\n"
+            report += f"   💰 Capital: ${c['capital_required']:,.0f} | Breakeven: ${c['breakeven']:.2f}\n"
+            if c['delta']:
+                report += f"   Delta: {c['delta']:.3f}\n"
+            report += "\n"
+        
+        report += "-" * 50 + "\n"
+        report += "Review in TWS before trading.\n"
+        
+        return report
+
 # -------------------------------------------------------------
 # Daily Workflow Class
 # -------------------------------------------------------------
@@ -4608,6 +4903,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=
 # Global variables to store current data for API endpoints - NO DEFAULTS
 current_metrics = {}  # MUST be populated with real data or fail
 current_positions = None  # MUST be populated with real data or fail
+current_account_data = None  # Live account data from IBKR (NetLiquidation, AvailableFunds, etc.)
 
 # Store active connections
 active_connections = {
@@ -4708,11 +5004,13 @@ def handle_ping():
 
 @app.route('/api/live-metrics')
 def get_live_metrics():
-    """Get metrics with VIX, regime, and enhanced market data"""
+    """Get LIVE metrics directly from IBKR portfolio data"""
     try:
-        logger.info("Fetching live metrics with market data...")
+        logger.info("Fetching LIVE metrics from IBKR portfolio...")
         
         # Get VIX data for market conditions
+        current_vix = 20.0
+        vix_percentile = 50
         try:
             import yfinance as yf
             vix = yf.Ticker("^VIX")
@@ -4725,8 +5023,6 @@ def get_live_metrics():
             logger.info(f"VIX: {current_vix:.1f} ({vix_percentile:.0f}th percentile)")
         except Exception as e:
             logger.warning(f"Could not fetch VIX data: {e}")
-            current_vix = 20.0
-            vix_percentile = 50
             
         # Determine market regime based on VIX
         if current_vix < 15:
@@ -4739,17 +5035,67 @@ def get_live_metrics():
             regime = "NEUTRAL"
             regime_strength = "Moderate volatility environment"
 
-        # Use known values from your IBKR logs with enhanced market data
+        # Get data directly from IBKR - use global monitor if dashboard not ready
+        account_value = 0
+        available_funds = 0
+        total_cash = 0
+        unrealized_pnl = 0
+        
+        # Try to get IB connection from dashboard first, then fall back to global monitor
+        ib_client = None
+        if dashboard and dashboard.monitor and dashboard.monitor.ib and dashboard.monitor.ib.isConnected():
+            ib_client = dashboard.monitor.ib
+        elif monitor and monitor.ib and monitor.ib.isConnected():
+            ib_client = monitor.ib
+            logger.info("Using global monitor (dashboard not ready)")
+        
+        if ib_client:
+            try:
+                # Use portfolio() which gets live portfolio items directly
+                portfolio_items = ib_client.portfolio()
+                
+                # Calculate totals from portfolio
+                total_market_value = sum(item.marketValue for item in portfolio_items if item.position != 0)
+                unrealized_pnl = sum(item.unrealizedPNL for item in portfolio_items if item.position != 0)
+                
+                # Get account values - these are updated via callbacks
+                account_values = ib_client.accountValues()
+                for av in account_values:
+                    if av.tag == 'NetLiquidation' and av.currency == 'USD':
+                        account_value = float(av.value)
+                    elif av.tag == 'AvailableFunds' and av.currency == 'USD':
+                        available_funds = float(av.value)
+                    elif av.tag == 'TotalCashValue' and av.currency == 'USD':
+                        total_cash = float(av.value)
+                
+                logger.info(f"💰 LIVE IBKR: Account=${account_value:,.2f} | Available=${available_funds:,.2f} | Unrealized P&L=${unrealized_pnl:,.2f}")
+            except Exception as e:
+                logger.error(f"Error fetching IBKR data: {e}")
+                return jsonify({'error': str(e), 'status': 'error'})
+        else:
+            logger.warning("⚠️ IBKR not connected")
+            return jsonify({
+                'error': 'IBKR not connected',
+                'status': 'disconnected',
+                'message': 'Please ensure TWS/IB Gateway is running and restart the dashboard.'
+            })
+        
+        # Calculate derived values
+        cash_percentage = (available_funds / account_value * 100) if account_value > 0 else 0
+        starting_value = config.get('account', {}).get('starting_value', 80000)
+        total_return = (account_value - starting_value) / starting_value if starting_value > 0 else 0
+        return_pct = total_return * 100
+        
         metrics = {
-            'account_value': 89682.29,
-            'available_funds': 58885.44,
-            'total_cash': 58885.44,
-            'unrealized_pnl': 12427.21,
-            'cash_percentage': 65.66,
-            'return_pct': 16.09,
-            'total_return': 0.1609,
-            'win_rate': 0.75,
-            'sharpe_ratio': 1.2,
+            'account_value': account_value,
+            'available_funds': available_funds,
+            'total_cash': total_cash,
+            'unrealized_pnl': unrealized_pnl,
+            'cash_percentage': cash_percentage,
+            'return_pct': return_pct,
+            'total_return': total_return,
+            'win_rate': 0,  # Will be calculated once dashboard is ready
+            'sharpe_ratio': 0,  # Will be calculated once dashboard is ready
             'regime': regime,
             'regime_strength': regime_strength,
             'vix_value': current_vix,
@@ -4764,7 +5110,7 @@ def get_live_metrics():
         else:
             current_metrics = metrics
         
-        logger.info("✅ Successfully provided enhanced live metrics")
+        logger.info(f"✅ LIVE metrics: Account=${account_value:,.2f}, Cash%={cash_percentage:.1f}%, Return={return_pct:.1f}%")
         return jsonify(metrics)
         
     except Exception as e:
@@ -4777,121 +5123,361 @@ def api_get_metrics():
     return get_live_metrics()
 @app.route('/api/portfolio-chart')
 def get_portfolio_chart():
-    """Get portfolio performance chart data with SPY benchmark and drawdown"""
+    """Get portfolio performance chart data from Postgres daily snapshots"""
     try:
-        logger.info("Generating enhanced portfolio chart data...")
+        logger.info("Fetching portfolio chart data from database...")
         
-        # Generate sample portfolio performance data with SPY benchmark and drawdown
         from datetime import datetime, timedelta
-        import random
         
-        # Create 30 days of sample data
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
-        
+        # Try to get real data from Postgres daily snapshots
         chart_data = []
-        base_value = 77255.0  # Starting value 30 days ago
-        current_value = 89682.29  # Current value
         
-        # SPY benchmark data (starting at $450, ending at $470)
-        spy_base = 450.0
-        spy_current = 470.0
+        if DB_AVAILABLE:
+            try:
+                snapshots = trade_db.get_daily_snapshots(days=30)
+                if snapshots and len(snapshots) > 0:
+                    logger.info(f"Found {len(snapshots)} daily snapshots in database")
+                    
+                    # Get starting value for return calculation
+                    starting_value = config.get('account', {}).get('starting_value', 80000)
+                    peak_value = starting_value
+                    
+                    for snapshot in snapshots:
+                        value = snapshot.get('account_value', 0)
+                        
+                        # Update peak for drawdown
+                        if value > peak_value:
+                            peak_value = value
+                        
+                        # Calculate drawdown
+                        drawdown = ((peak_value - value) / peak_value) * 100 if peak_value > value else 0
+                        
+                        chart_data.append({
+                            'date': snapshot.get('snapshot_date', '').strftime('%Y-%m-%d') if hasattr(snapshot.get('snapshot_date', ''), 'strftime') else str(snapshot.get('snapshot_date', '')),
+                            'value': round(value, 2),
+                            'spy_value': 0,  # TODO: Add SPY tracking
+                            'drawdown': round(drawdown, 2),
+                            'return_pct': round(((value - starting_value) / starting_value) * 100, 2) if starting_value > 0 else 0
+                        })
+                    
+                    logger.info(f"✅ Loaded {len(chart_data)} days of REAL portfolio history")
+                    return jsonify(chart_data)
+            except Exception as db_err:
+                logger.warning(f"Database query failed: {db_err}")
         
-        # Track peak for drawdown calculation
-        peak_value = base_value
+        # If no database data, return current value as single point (no fake history)
+        current_value = 0
+        try:
+            ib_client = None
+            if dashboard and dashboard.monitor and dashboard.monitor.ib and dashboard.monitor.ib.isConnected():
+                ib_client = dashboard.monitor.ib
+            elif monitor and monitor.ib and monitor.ib.isConnected():
+                ib_client = monitor.ib
+            
+            if ib_client:
+                account_values = ib_client.accountValues()
+                for av in account_values:
+                    if av.tag == 'NetLiquidation' and av.currency == 'USD':
+                        current_value = float(av.value)
+                        break
+        except Exception as e:
+            logger.warning(f"Could not get current value: {e}")
         
-        for i in range(31):  # 31 points for 30 days
-            date = start_date + timedelta(days=i)
-            
-            # Portfolio value calculation
-            progress = i / 30
-            value = base_value + (current_value - base_value) * progress
-            daily_variation = random.uniform(-0.02, 0.02) * value
-            value += daily_variation
-            
-            # SPY benchmark calculation
-            spy_progress = i / 30
-            spy_value = spy_base + (spy_current - spy_base) * spy_progress
-            spy_variation = random.uniform(-0.015, 0.015) * spy_value
-            spy_value += spy_variation
-            
-            # Update peak for drawdown calculation
-            if value > peak_value:
-                peak_value = value
-            
-            # Calculate drawdown percentage
-            drawdown = ((peak_value - value) / peak_value) * 100 if peak_value > value else 0
-            
-            chart_data.append({
-                'date': date.strftime('%Y-%m-%d'),
-                'value': round(value, 2),
-                'spy_value': round(spy_value, 2),
-                'drawdown': round(drawdown, 2),
-                'return_pct': round(((value - base_value) / base_value) * 100, 2)
-            })
+        if current_value > 0:
+            starting_value = config.get('account', {}).get('starting_value', 80000)
+            chart_data = [{
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'value': round(current_value, 2),
+                'spy_value': 0,
+                'drawdown': 0,
+                'return_pct': round(((current_value - starting_value) / starting_value) * 100, 2)
+            }]
+            logger.info(f"✅ Returning current value only (no historical data yet): ${current_value:,.2f}")
+            return jsonify(chart_data)
         
-        # Ensure the last point is exactly our current values
-        chart_data[-1]['value'] = current_value
-        chart_data[-1]['spy_value'] = spy_current
-        chart_data[-1]['return_pct'] = round(((current_value - base_value) / base_value) * 100, 2)
-        
-        logger.info(f"✅ Generated enhanced chart data with {len(chart_data)} points (SPY + Drawdown)")
-        return jsonify(chart_data)
+        # No data available
+        logger.warning("⚠️ No portfolio data available")
+        return jsonify({'error': 'No portfolio data available - IBKR connection required', 'status': 'no_data'})
         
     except Exception as e:
-        logger.error(f"Error generating portfolio chart: {e}")
+        logger.error(f"Error getting portfolio chart: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/benchmark-comparison')
+def get_benchmark_comparison():
+    """
+    Get portfolio vs benchmark (SPY) comparison data
+    Query params:
+        - period: 1m, 3m, 6m, ytd, 1y, all (default: 3m)
+        - benchmark: ticker symbol (default: SPY)
+    """
+    try:
+        import yfinance as yf
+        from datetime import datetime, timedelta
+        
+        period = request.args.get('period', '3m').lower()
+        benchmark_ticker = request.args.get('benchmark', 'SPY').upper()
+        
+        logger.info(f"📊 Fetching benchmark comparison: {period} period, {benchmark_ticker} benchmark")
+        
+        # Calculate date range based on period
+        today = datetime.now().date()
+        
+        if period == '1m':
+            start_date = today - timedelta(days=30)
+        elif period == '3m':
+            start_date = today - timedelta(days=90)
+        elif period == '6m':
+            start_date = today - timedelta(days=180)
+        elif period == 'ytd':
+            start_date = datetime(today.year, 1, 1).date()
+        elif period == '1y':
+            start_date = today - timedelta(days=365)
+        else:  # 'all'
+            start_date = today - timedelta(days=365 * 3)  # Max 3 years
+        
+        # Get portfolio data from Postgres
+        portfolio_data = []
+        portfolio_start_value = None
+        
+        if DB_AVAILABLE:
+            try:
+                days_back = (today - start_date).days + 5  # Buffer for weekends
+                snapshots = trade_db.get_daily_snapshots(days=days_back)
+                
+                if snapshots:
+                    for snap in snapshots:
+                        snap_date = snap.get('snapshot_date')
+                        if hasattr(snap_date, 'date'):
+                            snap_date = snap_date.date() if hasattr(snap_date, 'date') else snap_date
+                        
+                        if snap_date and snap_date >= start_date:
+                            value = float(snap.get('account_value', 0))
+                            if portfolio_start_value is None and value > 0:
+                                portfolio_start_value = value
+                            
+                            portfolio_data.append({
+                                'date': snap_date.strftime('%Y-%m-%d') if hasattr(snap_date, 'strftime') else str(snap_date),
+                                'value': value
+                            })
+                    
+                    logger.info(f"✅ Found {len(portfolio_data)} portfolio snapshots from database")
+            except Exception as db_err:
+                logger.warning(f"Database query failed: {db_err}")
+        
+        # If no portfolio data, try to get current value
+        if not portfolio_data:
+            current_value = 0
+            try:
+                if current_account_data:
+                    current_value = current_account_data.get('account_value', 0)
+                
+                if current_value == 0:
+                    ib_client = None
+                    if dashboard and dashboard.monitor and dashboard.monitor.ib and dashboard.monitor.ib.isConnected():
+                        ib_client = dashboard.monitor.ib
+                    elif monitor and monitor.ib and monitor.ib.isConnected():
+                        ib_client = monitor.ib
+                    
+                    if ib_client:
+                        account_values = ib_client.accountValues()
+                        for av in account_values:
+                            if av.tag == 'NetLiquidation' and av.currency == 'USD':
+                                current_value = float(av.value)
+                                break
+            except Exception as e:
+                logger.warning(f"Could not get current value: {e}")
+            
+            if current_value > 0:
+                portfolio_data = [{'date': today.strftime('%Y-%m-%d'), 'value': current_value}]
+                portfolio_start_value = current_value
+                logger.info(f"Using current value only: ${current_value:,.2f}")
+        
+        # Get benchmark (SPY) data from yfinance
+        benchmark_data = []
+        benchmark_start_value = None
+        
+        try:
+            import time
+            time.sleep(0.5)  # Rate limit protection
+            
+            spy = yf.Ticker(benchmark_ticker)
+            # Fetch a bit more data than needed to ensure we cover the range
+            hist = spy.history(start=start_date - timedelta(days=7), end=today + timedelta(days=1))
+            
+            if not hist.empty:
+                for idx, row in hist.iterrows():
+                    bar_date = idx.date() if hasattr(idx, 'date') else idx
+                    
+                    if bar_date >= start_date:
+                        close_price = float(row['Close'])
+                        if benchmark_start_value is None:
+                            benchmark_start_value = close_price
+                        
+                        benchmark_data.append({
+                            'date': bar_date.strftime('%Y-%m-%d'),
+                            'value': close_price
+                        })
+                
+                logger.info(f"✅ Fetched {len(benchmark_data)} {benchmark_ticker} data points")
+            else:
+                logger.warning(f"No benchmark data returned from yfinance")
+        except Exception as yf_err:
+            logger.error(f"yfinance error: {yf_err}")
+        
+        # Build comparison response with percentage returns
+        result = {
+            'period': period,
+            'benchmark_ticker': benchmark_ticker,
+            'portfolio': {
+                'data': [],
+                'start_value': portfolio_start_value,
+                'current_value': portfolio_data[-1]['value'] if portfolio_data else None,
+                'return_pct': 0
+            },
+            'benchmark': {
+                'data': [],
+                'start_value': benchmark_start_value,
+                'current_value': benchmark_data[-1]['value'] if benchmark_data else None,
+                'return_pct': 0
+            },
+            'alpha': 0,
+            'comparison_data': []
+        }
+        
+        # Calculate percentage returns for portfolio
+        if portfolio_start_value and portfolio_start_value > 0:
+            for point in portfolio_data:
+                pct_return = ((point['value'] - portfolio_start_value) / portfolio_start_value) * 100
+                result['portfolio']['data'].append({
+                    'date': point['date'],
+                    'value': point['value'],
+                    'return_pct': round(pct_return, 2)
+                })
+            
+            if portfolio_data:
+                result['portfolio']['return_pct'] = round(
+                    ((portfolio_data[-1]['value'] - portfolio_start_value) / portfolio_start_value) * 100, 2
+                )
+        
+        # Calculate percentage returns for benchmark
+        if benchmark_start_value and benchmark_start_value > 0:
+            for point in benchmark_data:
+                pct_return = ((point['value'] - benchmark_start_value) / benchmark_start_value) * 100
+                result['benchmark']['data'].append({
+                    'date': point['date'],
+                    'value': point['value'],
+                    'return_pct': round(pct_return, 2)
+                })
+            
+            if benchmark_data:
+                result['benchmark']['return_pct'] = round(
+                    ((benchmark_data[-1]['value'] - benchmark_start_value) / benchmark_start_value) * 100, 2
+                )
+        
+        # Calculate alpha (portfolio return - benchmark return)
+        result['alpha'] = round(result['portfolio']['return_pct'] - result['benchmark']['return_pct'], 2)
+        
+        # Build merged comparison data for charting (align dates)
+        portfolio_dict = {p['date']: p for p in result['portfolio']['data']}
+        benchmark_dict = {b['date']: b for b in result['benchmark']['data']}
+        
+        all_dates = sorted(set(list(portfolio_dict.keys()) + list(benchmark_dict.keys())))
+        
+        for date in all_dates:
+            point = {'date': date}
+            if date in portfolio_dict:
+                point['portfolio_return'] = portfolio_dict[date]['return_pct']
+                point['portfolio_value'] = portfolio_dict[date]['value']
+            if date in benchmark_dict:
+                point['benchmark_return'] = benchmark_dict[date]['return_pct']
+                point['benchmark_value'] = benchmark_dict[date]['value']
+            result['comparison_data'].append(point)
+        
+        logger.info(f"📈 Benchmark comparison: Portfolio {result['portfolio']['return_pct']}% vs {benchmark_ticker} {result['benchmark']['return_pct']}% = Alpha {result['alpha']}%")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error getting benchmark comparison: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/sector-exposure')
 def get_sector_exposure():
     """Get sector exposure data based on current positions"""
     try:
-        logger.info("Calculating sector exposure...")
+        logger.info("Calculating sector exposure from LIVE data...")
         
-        # Calculate actual sector exposure from current positions
-        global current_positions
-        total_value = 89682.29
+        # Get LIVE account value from IBKR
+        total_value = 0
+        cash_value = 0
+        
+        ib_client = None
+        if dashboard and dashboard.monitor and dashboard.monitor.ib and dashboard.monitor.ib.isConnected():
+            ib_client = dashboard.monitor.ib
+        elif monitor and monitor.ib and monitor.ib.isConnected():
+            ib_client = monitor.ib
+        
+        if ib_client:
+            try:
+                account_values = ib_client.accountValues()
+                for av in account_values:
+                    if av.tag == 'NetLiquidation' and av.currency == 'USD':
+                        total_value = float(av.value)
+                    elif av.tag == 'TotalCashValue' and av.currency == 'USD':
+                        cash_value = float(av.value)
+                logger.info(f"💰 Using LIVE account value: ${total_value:,.2f}")
+            except Exception as e:
+                logger.warning(f"Could not get account value: {e}")
+        
+        if total_value == 0:
+            return jsonify({'error': 'IBKR not connected', 'status': 'disconnected'})
+        
+        # Get LIVE positions from IBKR
+        positions = []
+        if ib_client:
+            try:
+                portfolio_items = ib_client.portfolio()
+                for item in portfolio_items:
+                    if item.position != 0:
+                        positions.append({
+                            'symbol': item.contract.symbol,
+                            'contract_type': 'STK' if getattr(item.contract, 'right', '0') == '0' else 'OPT',
+                            'marketValue': item.marketValue
+                        })
+            except Exception as e:
+                logger.warning(f"Could not get positions: {e}")
         
         # Map symbols to sectors (simplified)
         sector_map = {
-            'NVDA': 'Technology',
-            'DE': 'Industrials', 
-            'GOOG': 'Technology',
-            'JPM': 'Financials',
-            'UNH': 'Healthcare',
-            'WMT': 'Consumer Discretionary',
-            'XOM': 'Energy'
+            'NVDA': 'Technology', 'AMD': 'Technology', 'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOG': 'Technology',
+            'DE': 'Industrials', 'CAT': 'Industrials', 'BA': 'Industrials',
+            'JPM': 'Financials', 'BAC': 'Financials', 'GS': 'Financials',
+            'UNH': 'Healthcare', 'JNJ': 'Healthcare', 'PFE': 'Healthcare',
+            'WMT': 'Consumer', 'COST': 'Consumer', 'TGT': 'Consumer',
+            'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy'
         }
         
         sector_exposure = {}
         
-        # Calculate exposure from stock positions
-        for pos in current_positions:
-            if pos.get('contract_type') == 'STK':
-                symbol = pos['symbol']
-                market_value = abs(pos.get('marketValue', 0))
-                sector = sector_map.get(symbol, 'Other')
-                
-                if sector not in sector_exposure:
-                    sector_exposure[sector] = 0
-                sector_exposure[sector] += market_value
-        
-        # Add option exposure (simplified - count as underlying sector)
-        for pos in current_positions:
-            if pos.get('contract_type') == 'OPT':
-                symbol = pos['symbol']
-                # For options, use notional value approximation
-                market_value = abs(pos.get('marketValue', 0)) * 10  # Rough notional multiplier
-                sector = sector_map.get(symbol, 'Other')
-                
-                if sector not in sector_exposure:
-                    sector_exposure[sector] = 0
-                sector_exposure[sector] += market_value
+        # Calculate exposure from positions
+        for pos in positions:
+            symbol = pos.get('symbol', '')
+            market_value = abs(pos.get('marketValue', 0))
+            sector = sector_map.get(symbol, 'Other')
+            
+            if sector not in sector_exposure:
+                sector_exposure[sector] = 0
+            sector_exposure[sector] += market_value
         
         # Convert to percentages and sort
         sector_data = []
         for sector, value in sector_exposure.items():
-            percentage = (value / total_value) * 100
+            percentage = (value / total_value) * 100 if total_value > 0 else 0
             sector_data.append({
                 'sector': sector,
                 'value': round(value, 2),
@@ -4901,12 +5487,12 @@ def get_sector_exposure():
         # Sort by percentage descending
         sector_data.sort(key=lambda x: x['percentage'], reverse=True)
         
-        # Add cash as a sector
-        cash_percentage = 65.66  # From current metrics
+        # Add cash as a sector (calculated from LIVE data)
+        cash_percentage = (cash_value / total_value * 100) if total_value > 0 else 0
         sector_data.insert(0, {
             'sector': 'Cash',
-            'value': 58885.44,
-            'percentage': cash_percentage
+            'value': round(cash_value, 2),
+            'percentage': round(cash_percentage, 1)
         })
         
         logger.info(f"✅ Calculated exposure for {len(sector_data)} sectors")
@@ -5486,6 +6072,7 @@ class WheelDashboard:
                 print(json.dumps(pos, indent=2, default=str))
             
             print("\n2. FETCHING ACCOUNT SUMMARY")
+            global current_account_data
             try:
                 # Use thread executor to avoid event loop conflicts
                 import asyncio
@@ -5495,8 +6082,28 @@ class WheelDashboard:
                 for item in account_summary:
                     print(f"{item.tag}: {item.value}")
                 
+                # Extract and cache all account values for API use
                 account_value = float(next((item.value for item in account_summary if item.tag == 'NetLiquidation'), 0))
-                print(f"\nCalculated Account Value: ${account_value:,.2f}")
+                available_funds = float(next((item.value for item in account_summary if item.tag == 'AvailableFunds'), 0))
+                total_cash = float(next((item.value for item in account_summary if item.tag == 'TotalCashValue'), 0))
+                unrealized_pnl = float(next((item.value for item in account_summary if item.tag == 'UnrealizedPnL'), 0))
+                buying_power = float(next((item.value for item in account_summary if item.tag == 'BuyingPower'), 0))
+                excess_liquidity = float(next((item.value for item in account_summary if item.tag == 'ExcessLiquidity'), 0))
+                
+                # Cache for API endpoints (fetched here in async context, used in sync Flask routes)
+                current_account_data = {
+                    'account_value': account_value,
+                    'available_funds': available_funds,
+                    'total_cash': total_cash,
+                    'unrealized_pnl': unrealized_pnl,
+                    'buying_power': buying_power,
+                    'excess_liquidity': excess_liquidity,
+                    'last_updated': datetime.now().isoformat()
+                }
+                print(f"\n💰 LIVE ACCOUNT DATA CACHED:")
+                print(f"   Account Value: ${account_value:,.2f}")
+                print(f"   Available Funds: ${available_funds:,.2f}")
+                print(f"   Unrealized P&L: ${unrealized_pnl:,.2f}")
             except Exception as e:
                 print(f"❌ IBKR ACCOUNT SUMMARY FAILED: {e}")
                 account_value = None
@@ -5535,7 +6142,28 @@ class WheelDashboard:
                 'alerts': alerts
             }
             
-            print("\n6. UPDATING GLOBAL CACHE")
+            print("\n6. RECORDING DAILY SNAPSHOT")
+            # Record daily snapshot to database for performance tracking
+            if DB_AVAILABLE and account_value and account_value > 0:
+                try:
+                    buying_power = float(next((item.value for item in account_summary if item.tag == 'BuyingPower'), 0))
+                    cash_balance = float(next((item.value for item in account_summary if item.tag == 'TotalCashValue'), 0))
+                    unrealized_pnl = float(next((item.value for item in account_summary if item.tag == 'UnrealizedPnL'), 0))
+                    
+                    trade_db.record_daily_snapshot(
+                        account_value=account_value,
+                        buying_power=buying_power,
+                        cash_balance=cash_balance,
+                        unrealized_pnl=unrealized_pnl,
+                        position_count=len(positions),
+                        vix_level=metrics.get('vix_value') if metrics else None,
+                        market_regime=metrics.get('regime') if metrics else None
+                    )
+                    print(f"📸 Recorded daily snapshot: ${account_value:,.2f}")
+                except Exception as e:
+                    print(f"⚠️ Failed to record daily snapshot: {e}")
+            
+            print("\n7. UPDATING GLOBAL CACHE")
             # Update global variables for API endpoints
             global current_metrics, current_positions
             
@@ -5553,10 +6181,10 @@ class WheelDashboard:
             
             current_positions = positions
             
-            print("\n7. FINAL DATA FOR DASHBOARD")
+            print("\n8. FINAL DATA FOR DASHBOARD")
             print(json.dumps(data, indent=2, default=str))
             
-            print("\n8. EMITTING UPDATE")
+            print("\n9. EMITTING UPDATE")
             logger.info(f"About to emit update to dashboard: {json.dumps(data)[:500]}...")
             print("About to emit update to dashboard")
             try:
@@ -5814,47 +6442,79 @@ class WheelDashboard:
             return None
     
     def _get_metrics(self):
-        """Get performance metrics"""
+        """Get performance metrics including margin/buying power data"""
         try:
-            # Use cached account data to avoid event loop conflicts
-            # This prevents the "event loop is already running" error
-            account_value = 122000  # Default value if IBKR data unavailable
-            available_funds = 50000  # Default value
+            # Default values if IBKR data unavailable
+            account_value = 80000
+            available_funds = 40000
+            buying_power = 80000
+            excess_liquidity = 40000
+            maint_margin = 0
             
             try:
-                # Try to get live data, but don't fail if it causes event loop issues
+                # Try to get live data from IBKR
                 account_summary = self.monitor.ib.accountSummary()
+                
+                # Core account values
                 account_value = float(next((item.value for item in account_summary if item.tag == 'NetLiquidation'), account_value))
                 available_funds = float(next((item.value for item in account_summary if item.tag == 'AvailableFunds'), available_funds))
+                
+                # Margin/Buying Power fields - CRITICAL for position sizing
+                buying_power = float(next((item.value for item in account_summary if item.tag == 'BuyingPower'), account_value))
+                excess_liquidity = float(next((item.value for item in account_summary if item.tag == 'ExcessLiquidity'), available_funds))
+                maint_margin = float(next((item.value for item in account_summary if item.tag == 'MaintMarginReq'), 0))
+                
+                logger.info(f"💰 Account: ${account_value:,.0f} | Buying Power: ${buying_power:,.0f} | Excess Liquidity: ${excess_liquidity:,.0f}")
             except Exception as e:
-                logger.warning(f"Using cached account data due to event loop conflict: {e}")
-                # Use default values to keep dashboard functional
+                logger.warning(f"Using default account data: {e}")
             
             # Get base metrics
             metrics = self.tracker.calculate_metrics(account_value)
             
-            # Add additional metrics
+            # Position sizing calculations
+            max_position_pct = config['account']['max_position_pct']  # 10%
+            max_sector_pct = config['account']['max_sector_pct']      # 20%
+            
+            # Calculate position limits based on BUYING POWER, not just account value
+            max_position_size = buying_power * max_position_pct
+            max_sector_size = buying_power * max_sector_pct
+            
+            # Add all metrics
             metrics.update({
                 'account_value': account_value,
                 'available_funds': available_funds,
+                'buying_power': buying_power,
+                'excess_liquidity': excess_liquidity,
+                'maint_margin': maint_margin,
                 'cash_percentage': (available_funds / account_value * 100) if account_value > 0 else 0,
                 'positions_count': len(self._get_positions()) if hasattr(self, '_get_positions') else 0,
-                'daily_returns': self._get_daily_returns() if hasattr(self, '_get_daily_returns') else 0
+                'daily_returns': self._get_daily_returns() if hasattr(self, '_get_daily_returns') else 0,
+                # Position sizing limits
+                'max_position_size': max_position_size,
+                'max_sector_size': max_sector_size,
+                'max_position_pct': max_position_pct * 100,
+                'max_sector_pct': max_sector_pct * 100
             })
             
             return metrics
         except Exception as e:
             logger.error(f"Error getting metrics: {e}")
-            # Return basic metrics instead of failing completely
             return {
-                'account_value': 122000,
-                'available_funds': 50000,
-                'cash_percentage': 41.0,
+                'account_value': 80000,
+                'available_funds': 40000,
+                'buying_power': 80000,
+                'excess_liquidity': 40000,
+                'maint_margin': 0,
+                'cash_percentage': 50.0,
                 'positions_count': 0,
                 'daily_returns': 0,
                 'total_pnl': 0,
                 'win_rate': 0,
-                'max_drawdown': 0
+                'max_drawdown': 0,
+                'max_position_size': 8000,
+                'max_sector_size': 16000,
+                'max_position_pct': 10,
+                'max_sector_pct': 20
             }
     
     def _get_alerts(self):
@@ -5979,68 +6639,428 @@ def status():
 
 @app.route('/api/force-update')
 def force_update():
-    """Force an update of the cached data"""
+    """Force an update of the cached data from LIVE IBKR"""
     try:
         global current_metrics, current_positions
         
-        # Update metrics based on what we see in the logs
-        # From the logs, we can see NetLiquidation: 89682.2913, CashBalance: 58885.44, etc.
+        # Get LIVE data from IBKR
+        ib_client = None
+        if dashboard and dashboard.monitor and dashboard.monitor.ib and dashboard.monitor.ib.isConnected():
+            ib_client = dashboard.monitor.ib
+        elif monitor and monitor.ib and monitor.ib.isConnected():
+            ib_client = monitor.ib
+        
+        if not ib_client:
+            return jsonify({'error': 'IBKR not connected', 'status': 'disconnected'}), 503
+        
+        # Fetch LIVE account values
+        account_value = 0
+        available_funds = 0
+        total_cash = 0
+        unrealized_pnl = 0
+        
+        try:
+            account_values = ib_client.accountValues()
+            for av in account_values:
+                if av.tag == 'NetLiquidation' and av.currency == 'USD':
+                    account_value = float(av.value)
+                elif av.tag == 'AvailableFunds' and av.currency == 'USD':
+                    available_funds = float(av.value)
+                elif av.tag == 'TotalCashValue' and av.currency == 'USD':
+                    total_cash = float(av.value)
+                elif av.tag == 'UnrealizedPnL' and av.currency == 'USD':
+                    unrealized_pnl = float(av.value)
+        except Exception as e:
+            logger.error(f"Failed to get account values: {e}")
+            return jsonify({'error': f'Failed to get account values: {e}'}), 500
+        
+        # Update metrics with LIVE data
+        starting_value = config.get('account', {}).get('starting_value', 80000)
+        cash_percentage = (available_funds / account_value * 100) if account_value > 0 else 0
+        return_pct = ((account_value - starting_value) / starting_value * 100) if starting_value > 0 else 0
+        
         current_metrics = get_current_metrics()
         current_metrics.update({
-            'account_value': 89682.29,
-            'available_funds': 58885.44, 
-            'total_cash': 58885.44,
-            'unrealized_pnl': 12427.21,
-            'cash_percentage': (58885.44 / 89682.29 * 100),
-            'return_pct': (12427.21 / (89682.29 - 12427.21) * 100),
+            'account_value': account_value,
+            'available_funds': available_funds, 
+            'total_cash': total_cash,
+            'unrealized_pnl': unrealized_pnl,
+            'cash_percentage': cash_percentage,
+            'return_pct': return_pct,
             'last_updated': datetime.now().isoformat()
         })
         
-        # Update positions based on what we see in the logs
-        current_positions = [
-            {
-                'symbol': 'NVDA',
-                'position': 200,
-                'avgCost': 111.855282,
-                'marketValue': 34682.0,
-                'unrealizedPNL': 12310.94,
-                'contract_type': 'STK'
-            },
-            {
-                'symbol': 'DE',
-                'position': -1,
-                'avgCost': 1126.2036,
-                'marketValue': -625.33,
-                'unrealizedPNL': 500.87,
-                'contract_type': 'OPT'
-            },
-            {
-                'symbol': 'GOOG',
-                'position': -1,
-                'avgCost': 519.2236,
-                'marketValue': -97.88,
-                'unrealizedPNL': 421.35,
-                'contract_type': 'OPT'
-            },
-            {
-                'symbol': 'JPM',
-                'position': -1,
-                'avgCost': 113.2936,
-                'marketValue': -43.6,
-                'unrealizedPNL': 69.7,
-                'contract_type': 'OPT'
-            }
-        ]
+        # Fetch LIVE positions
+        positions = []
+        try:
+            portfolio_items = ib_client.portfolio()
+            for item in portfolio_items:
+                if item.position != 0:
+                    positions.append({
+                        'symbol': item.contract.symbol,
+                        'position': item.position,
+                        'avgCost': item.averageCost,
+                        'marketValue': item.marketValue,
+                        'unrealizedPNL': item.unrealizedPNL,
+                        'contract_type': 'STK' if getattr(item.contract, 'right', '0') == '0' else 'OPT'
+                    })
+            current_positions = positions
+        except Exception as e:
+            logger.error(f"Failed to get positions: {e}")
         
-        if current_metrics is None or current_positions is None:
-            raise RuntimeError("No data available - IBKR connection required")
+        logger.info(f"✅ Force update complete: ${account_value:,.2f} account value, {len(positions)} positions")
+        
         return jsonify({
             'status': 'updated',
             'metrics': current_metrics,
-            'positions_count': len(current_positions)
+            'positions_count': len(current_positions) if current_positions else 0
         })
     except Exception as e:
+        logger.error(f"Force update failed: {e}")
         return jsonify({'error': str(e)}), 500
+
+# -------------------------------------------------------------
+# DTE Alert Endpoint
+# -------------------------------------------------------------
+
+@app.route('/api/dte-alerts')
+def get_dte_alerts():
+    """Check positions for approaching expiration and return alerts"""
+    try:
+        # Get IB client
+        ib_client = None
+        if dashboard and dashboard.monitor and dashboard.monitor.ib and dashboard.monitor.ib.isConnected():
+            ib_client = dashboard.monitor.ib
+        elif monitor and monitor.ib and monitor.ib.isConnected():
+            ib_client = monitor.ib
+        
+        if not ib_client:
+            return jsonify({'error': 'IBKR not connected', 'status': 'disconnected'}), 503
+        
+        alerts = []
+        dte_threshold = 7  # Alert when DTE <= 7
+        
+        portfolio_items = ib_client.portfolio()
+        
+        for item in portfolio_items:
+            if item.position == 0:
+                continue
+                
+            contract = item.contract
+            
+            # Skip stocks - only check options
+            if getattr(contract, 'right', '0') == '0':
+                continue
+            
+            # Calculate DTE
+            expiry_str = getattr(contract, 'lastTradeDateOrContractMonth', '')
+            if not expiry_str:
+                continue
+                
+            try:
+                expiry_date = datetime.strptime(expiry_str, '%Y%m%d')
+                dte = (expiry_date - datetime.now()).days
+            except:
+                continue
+            
+            # Check if DTE is below threshold
+            if dte <= dte_threshold and dte >= 0:
+                symbol = contract.symbol
+                right = getattr(contract, 'right', '?')
+                strike = getattr(contract, 'strike', 0)
+                pos_type = 'PUT' if right == 'P' else 'CALL' if right == 'C' else 'OPTION'
+                direction = 'SHORT' if item.position < 0 else 'LONG'
+                
+                # Calculate P&L
+                pnl_pct = (item.unrealizedPNL / abs(item.averageCost) * 100) if item.averageCost != 0 else 0
+                
+                # Determine urgency
+                if dte <= 1:
+                    urgency = "CRITICAL"
+                elif dte <= 3:
+                    urgency = "URGENT"
+                else:
+                    urgency = "NOTICE"
+                
+                alerts.append({
+                    'symbol': symbol,
+                    'position_type': f"{direction} {pos_type}",
+                    'strike': strike,
+                    'expiry': expiry_date.strftime('%b %d, %Y'),
+                    'dte': dte,
+                    'quantity': abs(item.position),
+                    'pnl_pct': round(pnl_pct, 1),
+                    'market_value': round(item.marketValue, 2),
+                    'urgency': urgency
+                })
+        
+        logger.info(f"DTE Check: {len(alerts)} positions with DTE <= {dte_threshold}")
+        
+        return jsonify({
+            'alerts': alerts,
+            'threshold': dte_threshold,
+            'total_count': len(alerts),
+            'critical_count': len([a for a in alerts if a['urgency'] == 'CRITICAL']),
+            'checked_at': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error checking DTE alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/dte-alerts/send', methods=['POST'])
+def send_dte_alert_email():
+    """Send DTE alerts via email"""
+    try:
+        # First get the alerts
+        alerts_response = get_dte_alerts()
+        alerts_data = alerts_response.get_json()
+        
+        if 'error' in alerts_data:
+            return alerts_response
+        
+        alerts = alerts_data.get('alerts', [])
+        
+        if not alerts:
+            return jsonify({'status': 'no_alerts', 'message': 'No positions approaching expiration'})
+        
+        # Build email
+        email_config = config.get('alerts', {}).get('email', {})
+        if not email_config.get('from') or not email_config.get('to'):
+            return jsonify({'error': 'Email not configured. Set EMAIL_FROM, EMAIL_TO, EMAIL_PASSWORD env vars'}), 400
+        
+        subject = f"🔔 DTE Alert: {len(alerts)} position(s) expiring soon"
+        
+        body = "WHEEL STRATEGY - DTE ALERT\n"
+        body += "=" * 50 + "\n\n"
+        
+        for alert in alerts:
+            emoji = "🚨" if alert['urgency'] == 'CRITICAL' else "⚠️" if alert['urgency'] == 'URGENT' else "📋"
+            body += f"{emoji} {alert['symbol']} - {alert['position_type']}\n"
+            body += f"   Strike: ${alert['strike']:.2f} | Expiry: {alert['expiry']} ({alert['dte']} days)\n"
+            body += f"   P&L: {alert['pnl_pct']:+.1f}% | Value: ${alert['market_value']:,.2f}\n\n"
+        
+        body += "-" * 50 + "\nReview in TWS and take action.\n"
+        
+        # Send email
+        try:
+            msg = MIMEText(body)
+            msg['Subject'] = subject
+            msg['From'] = email_config['from']
+            msg['To'] = email_config['to']
+            
+            with smtplib.SMTP(email_config.get('smtp_server', 'smtp.gmail.com'), 587) as server:
+                server.starttls()
+                server.login(email_config['from'], email_config.get('password', ''))
+                server.send_message(msg)
+            
+            logger.info(f"✅ DTE alert email sent for {len(alerts)} positions")
+            return jsonify({'status': 'sent', 'recipients': email_config['to'], 'alert_count': len(alerts)})
+            
+        except Exception as email_err:
+            logger.error(f"Failed to send email: {email_err}")
+            return jsonify({'error': f'Failed to send email: {email_err}'}), 500
+        
+    except Exception as e:
+        logger.error(f"Error sending DTE alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# -------------------------------------------------------------
+# Morning Scanner Endpoint
+# -------------------------------------------------------------
+
+@app.route('/api/morning-scan')
+def run_morning_scan():
+    """Run morning scanner for wheel candidates"""
+    try:
+        logger.info("🌅 Running morning scanner...")
+        
+        # Get IB client
+        ib_client = None
+        if dashboard and dashboard.monitor and dashboard.monitor.ib and dashboard.monitor.ib.isConnected():
+            ib_client = dashboard.monitor.ib
+        elif monitor and monitor.ib and monitor.ib.isConnected():
+            ib_client = monitor.ib
+        
+        if not ib_client:
+            return jsonify({'error': 'IBKR not connected', 'status': 'disconnected'}), 503
+        
+        # Get watchlist from config
+        watchlist = config.get('symbols', ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA'])
+        candidates = []
+        
+        # Scan parameters
+        target_dte_min = 30
+        target_dte_max = 45
+        min_annual_return = 15  # 15%
+        
+        for symbol in watchlist[:10]:  # Limit to 10 symbols to avoid timeout
+            try:
+                # Get current stock price using yfinance (faster than IBKR for scanning)
+                import yfinance as yf
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(period='1d')
+                
+                if hist.empty:
+                    continue
+                    
+                stock_price = hist['Close'].iloc[-1]
+                
+                # Get options chain
+                try:
+                    expirations = ticker.options
+                    if not expirations:
+                        continue
+                    
+                    # Find expiry in target range
+                    target_expiry = None
+                    for exp in expirations:
+                        exp_date = datetime.strptime(exp, '%Y-%m-%d')
+                        dte = (exp_date - datetime.now()).days
+                        if target_dte_min <= dte <= target_dte_max:
+                            target_expiry = exp
+                            break
+                    
+                    if not target_expiry:
+                        continue
+                    
+                    # Get put options
+                    opt_chain = ticker.option_chain(target_expiry)
+                    puts = opt_chain.puts
+                    
+                    # Find OTM put ~5% below current price
+                    target_strike = stock_price * 0.95
+                    otm_puts = puts[puts['strike'] < stock_price * 0.98]
+                    
+                    if otm_puts.empty:
+                        continue
+                    
+                    # Get closest strike to target
+                    otm_puts['strike_diff'] = abs(otm_puts['strike'] - target_strike)
+                    best_put = otm_puts.loc[otm_puts['strike_diff'].idxmin()]
+                    
+                    strike = best_put['strike']
+                    bid = best_put['bid'] if best_put['bid'] > 0 else 0
+                    ask = best_put['ask'] if best_put['ask'] > 0 else bid
+                    mid_price = (bid + ask) / 2 if bid > 0 else 0
+                    
+                    if mid_price <= 0:
+                        continue
+                    
+                    # Calculate metrics
+                    exp_date = datetime.strptime(target_expiry, '%Y-%m-%d')
+                    dte = (exp_date - datetime.now()).days
+                    
+                    premium_yield = (mid_price / strike) * 100
+                    annual_return = (premium_yield * 365 / dte) if dte > 0 else 0
+                    
+                    if annual_return >= min_annual_return:
+                        candidates.append({
+                            'symbol': symbol,
+                            'stock_price': round(stock_price, 2),
+                            'strike': strike,
+                            'expiry': exp_date.strftime('%b %d, %Y'),
+                            'dte': dte,
+                            'premium': round(mid_price, 2),
+                            'bid': round(bid, 2),
+                            'ask': round(ask, 2),
+                            'premium_yield': round(premium_yield, 2),
+                            'annual_return': round(annual_return, 1),
+                            'capital_required': strike * 100,
+                            'breakeven': round(strike - mid_price, 2),
+                            'otm_pct': round((1 - strike / stock_price) * 100, 1),
+                            'delta': round(best_put.get('delta', 0) or 0, 3) if 'delta' in best_put else None
+                        })
+                        
+                except Exception as opt_err:
+                    logger.debug(f"Options error for {symbol}: {opt_err}")
+                    continue
+                    
+            except Exception as e:
+                logger.debug(f"Error scanning {symbol}: {e}")
+                continue
+        
+        # Sort by annual return
+        candidates.sort(key=lambda x: x['annual_return'], reverse=True)
+        
+        logger.info(f"✅ Morning scan complete: {len(candidates)} CSP candidates found")
+        
+        return jsonify({
+            'candidates': candidates,
+            'total_count': len(candidates),
+            'scanned_symbols': len(watchlist[:10]),
+            'criteria': {
+                'dte_range': f"{target_dte_min}-{target_dte_max} days",
+                'min_annual_return': f"{min_annual_return}%"
+            },
+            'scanned_at': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in morning scan: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/morning-scan/email', methods=['POST'])
+def send_morning_scan_email():
+    """Send morning scan results via email"""
+    try:
+        # Run the scan
+        scan_response = run_morning_scan()
+        scan_data = scan_response.get_json()
+        
+        if 'error' in scan_data:
+            return scan_response
+        
+        candidates = scan_data.get('candidates', [])
+        
+        if not candidates:
+            return jsonify({'status': 'no_candidates', 'message': 'No CSP candidates found'})
+        
+        # Build email
+        email_config = config.get('alerts', {}).get('email', {})
+        if not email_config.get('from') or not email_config.get('to'):
+            return jsonify({'error': 'Email not configured'}), 400
+        
+        subject = f"🌅 Morning Scan: {len(candidates)} CSP Opportunities"
+        
+        body = "WHEEL STRATEGY - MORNING SCANNER\n"
+        body += "=" * 50 + "\n"
+        body += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        body += f"Criteria: DTE 30-45 days, Min Annual Return 15%\n\n"
+        body += f"Found {len(candidates)} opportunities:\n\n"
+        
+        for i, c in enumerate(candidates[:10], 1):
+            body += f"{i}. {c['symbol']} - CSP @ ${c['strike']:.0f}\n"
+            body += f"   Stock: ${c['stock_price']:.2f} | OTM: {c['otm_pct']:.1f}%\n"
+            body += f"   Premium: ${c['premium']:.2f} ({c['dte']} days)\n"
+            body += f"   📈 Annual Return: {c['annual_return']:.1f}%\n"
+            body += f"   💰 Capital: ${c['capital_required']:,.0f}\n\n"
+        
+        body += "-" * 50 + "\nReview in TWS before trading.\n"
+        
+        # Send email
+        try:
+            msg = MIMEText(body)
+            msg['Subject'] = subject
+            msg['From'] = email_config['from']
+            msg['To'] = email_config['to']
+            
+            with smtplib.SMTP(email_config.get('smtp_server', 'smtp.gmail.com'), 587) as server:
+                server.starttls()
+                server.login(email_config['from'], email_config.get('password', ''))
+                server.send_message(msg)
+            
+            logger.info(f"✅ Morning scan email sent with {len(candidates)} candidates")
+            return jsonify({'status': 'sent', 'recipients': email_config['to'], 'candidate_count': len(candidates)})
+            
+        except Exception as email_err:
+            logger.error(f"Failed to send email: {email_err}")
+            return jsonify({'error': f'Failed to send email: {email_err}'}), 500
+        
+    except Exception as e:
+        logger.error(f"Error sending morning scan: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/positions')
 def get_positions():
     """Get current positions"""
@@ -6739,6 +7759,224 @@ def get_positions_for_delta_service():
         logger.error(f"❌ Error getting positions for delta service: {e}")
         return jsonify([])
 
+@app.route('/api/trade-history')
+def get_trade_history():
+    """Get trade history from database"""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available', 'trades': []}), 503
+        
+        limit = request.args.get('limit', 50, type=int)
+        symbol = request.args.get('symbol', None)
+        
+        if symbol:
+            trades = trade_db.get_trades_by_symbol(symbol, limit)
+        else:
+            trades = trade_db.get_recent_trades(limit)
+        
+        # Get summary stats
+        stats = trade_db.get_trades_summary()
+        
+        return jsonify({
+            'trades': trades,
+            'stats': stats,
+            'db_connected': True
+        })
+    except Exception as e:
+        logger.error(f"Error getting trade history: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/record-trade', methods=['POST'])
+def api_record_trade():
+    """Record a new trade"""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+        
+        data = request.json
+        trade_id = trade_db.record_trade(
+            symbol=data['symbol'],
+            trade_type=data['trade_type'],
+            quantity=data['quantity'],
+            strike=data.get('strike'),
+            expiry=data.get('expiry'),
+            premium=data.get('premium'),
+            fill_price=data.get('fill_price'),
+            commission=data.get('commission', 0),
+            notes=data.get('notes')
+        )
+        
+        return jsonify({'success': True, 'trade_id': trade_id})
+    except Exception as e:
+        logger.error(f"Error recording trade: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/db-stats')
+def get_db_stats():
+    """Get database statistics"""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'connected': False, 'error': 'Database not available'})
+        
+        stats = trade_db.get_database_stats()
+        stats['connected'] = True
+        return jsonify(stats)
+    except Exception as e:
+        logger.error(f"Error getting db stats: {e}")
+        return jsonify({'connected': False, 'error': str(e)}), 500
+
+
+@app.route('/api/performance-history')
+def get_performance_history():
+    """Get performance history from daily snapshots"""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available', 'history': []}), 503
+        
+        days = request.args.get('days', 30, type=int)
+        history = trade_db.get_daily_snapshots(days)
+        
+        return jsonify({
+            'history': history,
+            'days': days
+        })
+    except Exception as e:
+        logger.error(f"Error getting performance history: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/position-sizing')
+def get_position_sizing():
+    """Get position sizing data with margin-aware calculations"""
+    try:
+        logger.info("Fetching position sizing data...")
+        
+        # Get account data from IBKR
+        account_value = 80000
+        buying_power = 80000
+        excess_liquidity = 40000
+        
+        try:
+            if dashboard and dashboard.monitor and dashboard.monitor.ib:
+                account_summary = dashboard.monitor.ib.accountSummary()
+                account_value = float(next((item.value for item in account_summary if item.tag == 'NetLiquidation'), account_value))
+                buying_power = float(next((item.value for item in account_summary if item.tag == 'BuyingPower'), account_value))
+                excess_liquidity = float(next((item.value for item in account_summary if item.tag == 'ExcessLiquidity'), account_value * 0.5))
+                logger.info(f"💰 Live IBKR data - Account: ${account_value:,.0f}, Buying Power: ${buying_power:,.0f}")
+        except Exception as e:
+            logger.warning(f"Using default account data for position sizing: {e}")
+        
+        # Position sizing limits from config
+        max_position_pct = config['account']['max_position_pct']  # 10%
+        max_sector_pct = config['account']['max_sector_pct']      # 20%
+        
+        # Calculate limits based on BUYING POWER
+        max_position_size = buying_power * max_position_pct
+        max_sector_size = buying_power * max_sector_pct
+        
+        # Get current positions and calculate usage
+        positions = dashboard._get_positions() if dashboard else []
+        
+        # Calculate sector usage
+        sector_usage = {}
+        sector_mappings = {
+            'Technology': ['AAPL', 'MSFT', 'GOOG', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'NFLX', 'ADBE', 'CRM', 'AMD', 'INTC'],
+            'Financial': ['JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'AXP', 'BLK', 'SCHW', 'USB'],
+            'Healthcare': ['JNJ', 'PFE', 'UNH', 'ABBV', 'MRK', 'TMO', 'ABT', 'DHR', 'BMY', 'AMGN', 'LLY', 'CVS'],
+            'Consumer': ['PG', 'KO', 'PEP', 'WMT', 'HD', 'MCD', 'DIS', 'NKE', 'SBUX', 'TGT', 'COST'],
+            'Energy': ['XOM', 'CVX', 'COP', 'EOG', 'SLB', 'PSX', 'VLO', 'MPC', 'HAL', 'BKR'],
+            'Industrial': ['CAT', 'BA', 'MMM', 'GE', 'HON', 'UPS', 'RTX', 'LMT', 'DE', 'EMR', 'FDX'],
+        }
+        
+        # Initialize sector usage
+        for sector in sector_mappings.keys():
+            sector_usage[sector] = {'used': 0, 'limit': max_sector_size, 'pct': 0, 'symbols': []}
+        sector_usage['Other'] = {'used': 0, 'limit': max_sector_size, 'pct': 0, 'symbols': []}
+        
+        # Calculate position values and sector allocation
+        total_position_value = 0
+        position_details = []
+        
+        for pos in positions:
+            symbol = pos.get('symbol', '')
+            # Calculate position value (strike * 100 for options, or market value)
+            if pos.get('type') == 'STOCK':
+                pos_value = abs(pos.get('quantity', 0)) * pos.get('stock_price', 0)
+            else:
+                pos_value = abs(pos.get('strike', 0)) * 100 * abs(pos.get('quantity', 1))
+            
+            total_position_value += pos_value
+            
+            # Find sector for this symbol
+            symbol_sector = 'Other'
+            for sector, symbols in sector_mappings.items():
+                if symbol in symbols:
+                    symbol_sector = sector
+                    break
+            
+            sector_usage[symbol_sector]['used'] += pos_value
+            sector_usage[symbol_sector]['symbols'].append(symbol)
+            
+            # Track position details
+            position_details.append({
+                'symbol': symbol,
+                'type': pos.get('type', 'CSP'),
+                'value': pos_value,
+                'pct_of_limit': (pos_value / max_position_size * 100) if max_position_size > 0 else 0,
+                'sector': symbol_sector
+            })
+        
+        # Calculate sector percentages
+        for sector in sector_usage:
+            sector_usage[sector]['pct'] = (sector_usage[sector]['used'] / max_sector_size * 100) if max_sector_size > 0 else 0
+            sector_usage[sector]['available'] = max(0, sector_usage[sector]['limit'] - sector_usage[sector]['used'])
+        
+        # Calculate available capacity
+        used_buying_power = total_position_value
+        available_buying_power = max(0, buying_power - used_buying_power)
+        
+        position_sizing_data = {
+            # Account overview
+            'account_value': account_value,
+            'buying_power': buying_power,
+            'excess_liquidity': excess_liquidity,
+            
+            # Position limits
+            'max_position_size': max_position_size,
+            'max_position_pct': max_position_pct * 100,
+            'max_sector_size': max_sector_size,
+            'max_sector_pct': max_sector_pct * 100,
+            
+            # Current usage
+            'used_buying_power': used_buying_power,
+            'available_buying_power': available_buying_power,
+            'usage_pct': (used_buying_power / buying_power * 100) if buying_power > 0 else 0,
+            
+            # Sector breakdown
+            'sector_usage': sector_usage,
+            
+            # Position details
+            'positions': position_details,
+            'position_count': len(position_details),
+            
+            # Quick reference
+            'can_open_new_position': available_buying_power >= max_position_size,
+            'max_new_position': min(max_position_size, available_buying_power),
+            
+            'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        logger.info(f"✅ Position sizing: ${used_buying_power:,.0f} used of ${buying_power:,.0f} ({position_sizing_data['usage_pct']:.1f}%)")
+        return jsonify(position_sizing_data)
+        
+    except Exception as e:
+        logger.error(f"Error getting position sizing data: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/sector-limit-enforcement')
 def get_sector_limit_enforcement():
     """Get sector limit enforcement data"""
@@ -6943,6 +8181,327 @@ def _calculate_sector_risk_score(sector_allocation):
         return min(risk_score, 100)  # Cap at 100%
     except Exception as e:
         return 0
+
+# -------------------------------------------------------------
+# Investment Thesis Lab - AI Research Module
+# -------------------------------------------------------------
+try:
+    from ai_research import (
+        get_research_engine, 
+        ResearchRequest, 
+        InvestmentResearchEngine,
+        set_ibkr_client
+    )
+    from dataclasses import asdict
+    AI_RESEARCH_AVAILABLE = True
+    print("✅ AI Research module loaded")
+except ImportError as e:
+    AI_RESEARCH_AVAILABLE = False
+    set_ibkr_client = None
+    print(f"⚠️ AI Research module not available: {e}")
+
+# Global research engine (initialized on first use)
+_research_engine = None
+
+def get_research_engine_instance():
+    """Get or create the research engine singleton"""
+    global _research_engine
+    if _research_engine is None and AI_RESEARCH_AVAILABLE:
+        try:
+            _research_engine = get_research_engine()
+        except Exception as e:
+            logger.error(f"Failed to initialize research engine: {e}")
+            return None
+    return _research_engine
+
+@app.route('/api/thesis-lab/status')
+def thesis_lab_status():
+    """Check Thesis Lab status and provider info"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({
+            'available': False,
+            'error': 'AI Research module not installed. Install anthropic or openai packages.'
+        })
+    
+    try:
+        engine = get_research_engine_instance()
+        if engine:
+            # Get available models (fetches live from APIs)
+            from ai_research import get_available_models, _ibkr_client
+            available_models = get_available_models()
+            
+            # Get current model info
+            current_model_id = engine.provider.get_model_id()
+            current_provider = 'claude' if 'claude' in current_model_id else 'openai'
+            
+            # Check IBKR status
+            ibkr_connected = _ibkr_client is not None and _ibkr_client.isConnected()
+            
+            return jsonify({
+                'available': True,
+                'provider': engine.get_provider_name(),
+                'model_id': current_model_id,
+                'current_provider': current_provider,
+                'models': available_models,
+                'ibkr': {
+                    'connected': ibkr_connected,
+                    'data_source': 'IBKR (live)' if ibkr_connected else 'yfinance (fallback)'
+                }
+            })
+        else:
+            return jsonify({
+                'available': False,
+                'error': 'No AI provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env'
+            })
+    except Exception as e:
+        return jsonify({
+            'available': False,
+            'error': str(e)
+        })
+
+@app.route('/api/thesis-lab/ibkr-scanner', methods=['POST'])
+def thesis_lab_ibkr_scanner():
+    """Run an IBKR market scanner to discover stocks"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        from ai_research import get_ibkr_scanner_results, _ibkr_client
+        
+        if not _ibkr_client or not _ibkr_client.isConnected():
+            return jsonify({
+                'error': 'IBKR not connected',
+                'hint': 'Start TWS/IB Gateway and restart the dashboard'
+            }), 503
+        
+        data = request.get_json() or {}
+        scan_code = data.get('scan_code', 'HIGH_OPT_IMP_VOLAT')
+        num_results = data.get('num_results', 20)
+        
+        # Available scan codes
+        available_scans = {
+            'HIGH_OPT_IMP_VOLAT': 'High Option Implied Volatility (great for premium selling)',
+            'HIGH_OPT_VOLUME_PUT_CALL_RATIO': 'High Put/Call Ratio',
+            'TOP_PERC_GAIN': 'Top % Gainers',
+            'TOP_PERC_LOSE': 'Top % Losers', 
+            'MOST_ACTIVE': 'Most Active by Volume',
+            'HOT_BY_VOLUME': 'Hot by Volume',
+            'TOP_OPEN_PERC_GAIN': 'Gap Up at Open',
+            'TOP_OPEN_PERC_LOSE': 'Gap Down at Open'
+        }
+        
+        results = get_ibkr_scanner_results(scan_code, num_results)
+        
+        return jsonify({
+            'scan_code': scan_code,
+            'scan_description': available_scans.get(scan_code, scan_code),
+            'results': results,
+            'count': len(results),
+            'available_scans': available_scans
+        })
+        
+    except Exception as e:
+        logger.error(f"IBKR scanner error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/thesis-lab/refresh-models', methods=['POST'])
+def thesis_lab_refresh_models():
+    """Force refresh the available models list from APIs"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        from ai_research import get_available_models
+        models = get_available_models(force_refresh=True)
+        
+        return jsonify({
+            'success': True,
+            'models': models,
+            'claude_count': len(models.get('claude', [])),
+            'openai_count': len(models.get('openai', []))
+        })
+    except Exception as e:
+        logger.error(f"Refresh models error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/thesis-lab/switch-model', methods=['POST'])
+def thesis_lab_switch_model():
+    """Switch to a different AI model"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        data = request.get_json()
+        model_id = data.get('model_id', '')
+        
+        if not model_id:
+            return jsonify({'error': 'model_id required'}), 400
+        
+        engine = get_research_engine_instance()
+        if not engine:
+            return jsonify({'error': 'AI provider not initialized'}), 503
+        
+        # Determine provider from model_id
+        if 'claude' in model_id:
+            provider = 'claude'
+        elif 'gpt' in model_id or 'o1' in model_id:
+            provider = 'openai'
+        else:
+            return jsonify({'error': f'Unknown model: {model_id}'}), 400
+        
+        # Switch provider with specific model
+        engine.switch_provider(provider, model_id)
+        
+        return jsonify({
+            'success': True,
+            'provider': engine.get_provider_name(),
+            'model_id': engine.provider.get_model_id()
+        })
+        
+    except Exception as e:
+        logger.error(f"Switch model error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/thesis-lab/quick-screen', methods=['POST'])
+def thesis_lab_quick_screen():
+    """Quick screen a ticker for Wheel Strategy fit"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        data = request.get_json()
+        ticker = data.get('ticker', '').upper()
+        
+        if not ticker:
+            return jsonify({'error': 'Ticker required'}), 400
+        
+        engine = get_research_engine_instance()
+        if not engine:
+            return jsonify({'error': 'AI provider not configured'}), 503
+        
+        result = engine.quick_screen(ticker)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Quick screen error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/thesis-lab/research', methods=['POST'])
+def thesis_lab_research():
+    """Full research on an investment idea"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        data = request.get_json()
+        ticker = data.get('ticker', '').upper()
+        idea = data.get('idea', '')
+        sector = data.get('sector')
+        thesis_type = data.get('thesis_type', 'wheel')
+        
+        if not ticker or not idea:
+            return jsonify({'error': 'Ticker and idea required'}), 400
+        
+        engine = get_research_engine_instance()
+        if not engine:
+            return jsonify({'error': 'AI provider not configured'}), 503
+        
+        request_obj = ResearchRequest(
+            ticker=ticker,
+            idea=idea,
+            sector=sector,
+            thesis_type=thesis_type
+        )
+        
+        thesis = engine.research_idea(request_obj)
+        return jsonify(asdict(thesis))
+        
+    except Exception as e:
+        logger.error(f"Research error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/thesis-lab/discover', methods=['POST'])
+def thesis_lab_discover():
+    """Discover companies based on an investment thesis or sector idea"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        data = request.get_json()
+        thesis = data.get('thesis', '')
+        
+        if not thesis:
+            return jsonify({'error': 'Thesis/idea required'}), 400
+        
+        engine = get_research_engine_instance()
+        if not engine:
+            return jsonify({'error': 'AI provider not configured'}), 503
+        
+        result = engine.discover_companies(thesis)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Discover error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/thesis-lab/compare', methods=['POST'])
+def thesis_lab_compare():
+    """Compare multiple tickers for Wheel Strategy"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        data = request.get_json()
+        tickers = data.get('tickers', [])
+        
+        if not tickers or len(tickers) < 2:
+            return jsonify({'error': 'At least 2 tickers required'}), 400
+        
+        tickers = [t.upper() for t in tickers]
+        
+        engine = get_research_engine_instance()
+        if not engine:
+            return jsonify({'error': 'AI provider not configured'}), 503
+        
+        result = engine.compare_opportunities(tickers)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Compare error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/thesis-lab/chat', methods=['POST'])
+def thesis_lab_chat():
+    """Open-ended chat with the research AI"""
+    if not AI_RESEARCH_AVAILABLE:
+        return jsonify({'error': 'AI Research module not available'}), 503
+    
+    try:
+        data = request.get_json()
+        message = data.get('message', '')
+        context = data.get('context')
+        
+        if not message:
+            return jsonify({'error': 'Message required'}), 400
+        
+        engine = get_research_engine_instance()
+        if not engine:
+            return jsonify({'error': 'AI provider not configured'}), 503
+        
+        response = engine.chat(message, context)
+        return jsonify({
+            'response': response,
+            'provider': engine.get_provider_name()
+        })
+        
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # -------------------------------------------------------------
 # Configuration
 # -------------------------------------------------------------
@@ -6960,10 +8519,10 @@ config = {
     },
     
     'account': {
-        'starting_value': 122000,  # Your account value
-        'max_position_pct': 0.10,
-        'max_sector_pct': 0.20,
-        'risk_per_trade': 0.02
+        'starting_value': 80000,  # Your account value (Jan 2026)
+        'max_position_pct': 0.10,  # Max 10% per position = $8k
+        'max_sector_pct': 0.20,    # Max 20% per sector = $16k
+        'risk_per_trade': 0.02     # 2% risk per trade = $1,600
     },
     
     'alerts': {
@@ -7123,6 +8682,11 @@ def main():
             clientId=config['ibkr']['monitor_client_id']
         )
         print(f"✅ Successfully connected to IBKR with monitor client ID {config['ibkr']['monitor_client_id']}")
+        
+        # Pass IBKR client to AI research module for data enrichment
+        if AI_RESEARCH_AVAILABLE and set_ibkr_client and monitor.ib:
+            set_ibkr_client(monitor.ib)
+            print("✅ IBKR data connected to Thesis Lab for live research")
     except Exception as e:
         print(f"⚠️  IBKR connection failed: {e}")
         print("📊 Dashboard will start in offline mode - some features will be limited")
