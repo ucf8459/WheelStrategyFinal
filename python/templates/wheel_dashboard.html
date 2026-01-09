@@ -2156,10 +2156,320 @@
                 });
         }
         
+        // =================================================================
+        // NEWSLETTER SCANNER FUNCTIONS
+        // =================================================================
+        
+        // Check newsletter scanner status
+        function checkNewsletterStatus() {
+            fetch('/api/newsletters/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('newsletter-status');
+                    if (statusDiv) {
+                        if (data.available) {
+                            statusDiv.innerHTML = `
+                                <span style="color: var(--success);">✅ Newsletter Scanner Ready</span>
+                                <span style="color: var(--text-muted); font-size: 0.85rem; margin-left: 0.5rem;">No API keys required!</span>
+                            `;
+                        } else {
+                            statusDiv.innerHTML = `
+                                <span style="color: var(--warning);">⚠️ ${data.message || 'Install feedparser: pip install feedparser'}</span>
+                            `;
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Newsletter status check error:', error);
+                });
+        }
+        
+        // Run newsletter scan
+        function runNewsletterScan(withAI = false) {
+            const resultDiv = document.getElementById('newsletter-result');
+            const scanBtn = document.getElementById('btn-newsletter-scan');
+            const scanAIBtn = document.getElementById('btn-newsletter-scan-ai');
+            
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">📰 Scanning finance newsletters... This may take 30-60 seconds.</div>';
+            scanBtn.disabled = true;
+            scanAIBtn.disabled = true;
+            
+            fetch('/api/newsletters/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    posts_per_newsletter: 3,
+                    ai_summary: withAI 
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                scanBtn.disabled = false;
+                scanAIBtn.disabled = false;
+                
+                if (data.error) {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                    return;
+                }
+                
+                // Build results HTML
+                let html = '';
+                
+                // AI Summary (if available)
+                if (data.ai_summary) {
+                    html += `
+                        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; border-left: 4px solid var(--secondary);">
+                            <div style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 0.5rem;">🤖 AI Summary</div>
+                            <div style="font-size: 0.95rem;">${data.ai_summary}</div>
+                        </div>
+                    `;
+                }
+                
+                // Stats bar
+                html += `
+                    <div style="display: flex; gap: 1rem; margin-bottom: 1rem; padding: 0.75rem; background: #334155; border-radius: 8px; font-size: 0.85rem;">
+                        <span>📰 <strong>${data.total_posts || 0}</strong> posts</span>
+                        <span>📚 <strong>${data.newsletters_scanned || 0}</strong> newsletters</span>
+                        <span>📊 <strong>${(data.trending_tickers || []).length}</strong> tickers found</span>
+                    </div>
+                `;
+                
+                // Trending tickers from newsletters
+                const trending = data.trending_tickers || [];
+                if (trending.length > 0) {
+                    html += '<div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem;">📈 Trending Tickers in Newsletters</div>';
+                    html += '<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">';
+                    
+                    trending.slice(0, 12).forEach(t => {
+                        html += `
+                            <div style="background: #334155; border-radius: 8px; padding: 0.5rem 0.75rem; cursor: pointer;"
+                                 onclick="document.getElementById('newsletter-ticker-input').value='${t.ticker}'; searchNewsletterTicker();">
+                                <span style="font-weight: bold;">${t.ticker}</span>
+                                <span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 0.25rem;">(${t.mentions})</span>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                // Recent posts
+                const posts = data.posts || [];
+                if (posts.length > 0) {
+                    html += '<div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem;">📝 Recent Posts</div>';
+                    html += '<div style="display: flex; flex-direction: column; gap: 0.75rem;">';
+                    
+                    posts.slice(0, 15).forEach(p => {
+                        const tickerBadges = p.tickers_mentioned.slice(0, 5).map(t => 
+                            `<span style="background: var(--primary); color: white; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">${t}</span>`
+                        ).join(' ');
+                        
+                        html += `
+                            <div style="background: #1e293b; border-radius: 8px; padding: 1rem; border-left: 3px solid var(--secondary);">
+                                <a href="${p.link}" target="_blank" style="font-weight: bold; color: var(--text-primary); text-decoration: none; display: block; margin-bottom: 0.5rem;">
+                                    ${p.title}
+                                </a>
+                                <div style="display: flex; gap: 0.75rem; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                                    <span>📰 ${p.newsletter}</span>
+                                    <span>✍️ ${p.author}</span>
+                                    <span>📅 ${p.published}</span>
+                                    <span>📖 ${p.word_count} words</span>
+                                </div>
+                                <div style="margin-top: 0.5rem;">${tickerBadges}</div>
+                                <details style="margin-top: 0.75rem;">
+                                    <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.85rem;">Preview</summary>
+                                    <div style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-muted); line-height: 1.5;">${p.content_preview}</div>
+                                </details>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                if (data.errors && data.errors.length > 0) {
+                    html += `<div style="margin-top: 1rem; font-size: 0.8rem; color: var(--warning);">⚠️ ${data.errors.length} newsletter(s) failed to load</div>`;
+                }
+                
+                resultDiv.innerHTML = html;
+            })
+            .catch(error => {
+                scanBtn.disabled = false;
+                scanAIBtn.disabled = false;
+                resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+            });
+        }
+        
+        // Show newsletter list
+        function showNewsletterList() {
+            const resultDiv = document.getElementById('newsletter-result');
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">Loading newsletter sources...</div>';
+            
+            fetch('/api/newsletters/list')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                        return;
+                    }
+                    
+                    let html = `
+                        <div style="background: #1e293b; border-radius: 8px; padding: 1rem;">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">📚 Configured Newsletters (${data.total})</h4>
+                    `;
+                    
+                    // Group by category
+                    const byCategory = data.by_category || {};
+                    Object.entries(byCategory).forEach(([category, newsletters]) => {
+                        html += `
+                            <div style="margin-bottom: 1rem;">
+                                <div style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 0.5rem; font-weight: bold;">${category}</div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0.5rem;">
+                        `;
+                        
+                        newsletters.forEach(nl => {
+                            const curatedBadge = nl.is_curated ? 
+                                '<span style="background: var(--success); color: white; padding: 0.1rem 0.3rem; border-radius: 4px; font-size: 0.65rem; margin-left: 0.5rem;">CURATED</span>' : 
+                                `<button onclick="removeNewsletter('${nl.id}')" style="background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.75rem; margin-left: 0.5rem;">✕ Remove</button>`;
+                            
+                            html += `
+                                <div style="background: #334155; padding: 0.75rem; border-radius: 6px;">
+                                    <div style="font-weight: bold; color: var(--text-primary);">${nl.name}${curatedBadge}</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted);">by ${nl.author}</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">${nl.focus}</div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div></div>';
+                    });
+                    
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                })
+                .catch(error => {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+                });
+        }
+        
+        // Add custom newsletter
+        function addNewsletter() {
+            const urlInput = document.getElementById('newsletter-url-input');
+            const url = urlInput.value.trim();
+            const resultDiv = document.getElementById('newsletter-result');
+            
+            if (!url) {
+                resultDiv.innerHTML = '<div style="color: var(--warning);">Please enter a newsletter URL</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">Adding newsletter...</div>';
+            
+            fetch('/api/newsletters/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                    return;
+                }
+                
+                urlInput.value = '';
+                resultDiv.innerHTML = `<div style="color: var(--success);">✅ ${data.message}</div>`;
+                
+                // Refresh the list after a moment
+                setTimeout(() => showNewsletterList(), 1000);
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+            });
+        }
+        
+        // Remove custom newsletter
+        function removeNewsletter(id) {
+            if (!confirm('Remove this newsletter?')) return;
+            
+            const resultDiv = document.getElementById('newsletter-result');
+            
+            fetch('/api/newsletters/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                
+                // Refresh the list
+                showNewsletterList();
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        }
+        
+        // Search for ticker in newsletters
+        function searchNewsletterTicker() {
+            const ticker = document.getElementById('newsletter-ticker-input').value.trim().toUpperCase();
+            const resultDiv = document.getElementById('newsletter-result');
+            
+            if (!ticker) {
+                resultDiv.innerHTML = '<div style="color: var(--warning);">Please enter a ticker symbol</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = `<div style="color: var(--text-muted);">🔍 Searching newsletters for ${ticker}...</div>`;
+            
+            fetch(`/api/newsletters/ticker/${ticker}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                        return;
+                    }
+                    
+                    let html = `
+                        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%); border-radius: 12px; padding: 1.25rem; border-left: 4px solid var(--primary);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <span style="font-size: 1.5rem; font-weight: bold;">${data.ticker}</span>
+                                <span style="color: var(--text-muted);">${data.count} mentions found</span>
+                            </div>
+                    `;
+                    
+                    if (data.posts && data.posts.length > 0) {
+                        data.posts.forEach(p => {
+                            html += `
+                                <div style="background: #1e293b; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem;">
+                                    <a href="${p.link}" target="_blank" style="font-weight: bold; color: var(--text-primary); text-decoration: none;">${p.title}</a>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                                        📰 ${p.newsletter} • ✍️ ${p.author} • 📅 ${p.published}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        html += '<div style="color: var(--text-muted);">No recent mentions found in newsletters</div>';
+                    }
+                    
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                })
+                .catch(error => {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+                });
+        }
+        
         // Initialize Thesis Lab on page load
         document.addEventListener('DOMContentLoaded', function() {
             checkThesisLabStatus();
             checkSocialStatus();  // Also check social scanner
+            checkNewsletterStatus();  // Also check newsletter scanner
             refreshSocialTrending();  // Load trending tickers widget
         });
 
@@ -3987,6 +4297,7 @@
                         <!-- Mode Tabs -->
                         <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
                             <button class="btn btn-primary btn-sm thesis-tab active" data-tab="discover" onclick="switchThesisTab('discover')">🔍 Discover</button>
+                            <button class="btn btn-secondary btn-sm thesis-tab" data-tab="newsletters" onclick="switchThesisTab('newsletters')">📰 Newsletters</button>
                             <button class="btn btn-secondary btn-sm thesis-tab" data-tab="social" onclick="switchThesisTab('social')">📱 Social</button>
                             <button class="btn btn-secondary btn-sm thesis-tab" data-tab="quick-screen" onclick="switchThesisTab('quick-screen')">Quick Screen</button>
                             <button class="btn btn-secondary btn-sm thesis-tab" data-tab="full-research" onclick="switchThesisTab('full-research')">Full Research</button>
@@ -4002,6 +4313,58 @@
                             </div>
                             <button class="btn btn-primary" onclick="runDiscover()">🔍 Discover Companies</button>
                             <div id="discover-result" style="margin-top: 1rem;"></div>
+                        </div>
+                        
+                        <!-- Newsletters Tab - Substack & RSS Finance Newsletters -->
+                        <div id="tab-newsletters" class="thesis-tab-content" style="display: none;">
+                            <div style="margin-bottom: 1rem;">
+                                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                                    Scan curated finance newsletters (Substack, etc.) via RSS feeds. <strong>No API key required!</strong>
+                                </p>
+                                
+                                <!-- Newsletter Status -->
+                                <div id="newsletter-status" style="margin-bottom: 1rem; padding: 0.75rem; background-color: #334155; border-radius: 8px; border: 1px solid var(--border);">
+                                    <span style="color: var(--text-muted);">Checking newsletter scanner status...</span>
+                                </div>
+                                
+                                <!-- Scan Controls -->
+                                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                                    <button class="btn btn-primary" onclick="runNewsletterScan()" id="btn-newsletter-scan">
+                                        📰 Scan Newsletters
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="runNewsletterScan(true)" id="btn-newsletter-scan-ai">
+                                        🤖 Scan + AI Summary
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="showNewsletterList()" id="btn-newsletter-list">
+                                        📋 View Sources
+                                    </button>
+                                </div>
+                                
+                                <!-- Add Custom Newsletter -->
+                                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                                        Add Custom Newsletter (Substack URL)
+                                    </label>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <input type="text" id="newsletter-url-input" placeholder="https://example.substack.com" style="flex: 1; min-width: 200px;">
+                                        <button class="btn btn-secondary btn-sm" onclick="addNewsletter()">+ Add</button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Search Ticker in Newsletters -->
+                                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                                        Search Ticker in Newsletters
+                                    </label>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <input type="text" id="newsletter-ticker-input" placeholder="NVDA" style="width: 100px; text-transform: uppercase;">
+                                        <button class="btn btn-secondary btn-sm" onclick="searchNewsletterTicker()">🔍 Find Mentions</button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Results Area -->
+                            <div id="newsletter-result" style="margin-top: 1rem;"></div>
                         </div>
                         
                         <!-- Social Tab - Reddit & StockTwits Scanning -->

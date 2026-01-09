@@ -8698,6 +8698,210 @@ def social_trending_quick():
 
 
 # -------------------------------------------------------------
+# Newsletter Scanner - Substack & RSS Feed Integration
+# -------------------------------------------------------------
+try:
+    from newsletter_scanner import get_newsletter_scanner, is_available as newsletter_is_available
+    NEWSLETTER_SCANNER_AVAILABLE = newsletter_is_available()
+    if NEWSLETTER_SCANNER_AVAILABLE:
+        print("✅ Newsletter Scanner module loaded")
+    else:
+        print("⚠️ Newsletter Scanner: feedparser not installed")
+except ImportError as e:
+    NEWSLETTER_SCANNER_AVAILABLE = False
+    print(f"⚠️ Newsletter Scanner module not available: {e}")
+
+# Global newsletter scanner instance
+_newsletter_scanner = None
+
+def get_newsletter_scanner_instance():
+    """Get or create the newsletter scanner singleton"""
+    global _newsletter_scanner
+    if _newsletter_scanner is None and NEWSLETTER_SCANNER_AVAILABLE:
+        try:
+            _newsletter_scanner = get_newsletter_scanner()
+        except Exception as e:
+            logger.error(f"Failed to initialize newsletter scanner: {e}")
+            return None
+    return _newsletter_scanner
+
+
+@app.route('/api/newsletters/status')
+def newsletter_status():
+    """Check Newsletter Scanner status"""
+    return jsonify({
+        'available': NEWSLETTER_SCANNER_AVAILABLE,
+        'message': 'Ready to scan finance newsletters!' if NEWSLETTER_SCANNER_AVAILABLE else 'Install feedparser: pip install feedparser',
+        'no_api_key_required': True
+    })
+
+
+@app.route('/api/newsletters/list')
+def newsletter_list():
+    """List all configured newsletters"""
+    if not NEWSLETTER_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Newsletter Scanner not available'}), 503
+    
+    try:
+        scanner = get_newsletter_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        newsletters = scanner.list_newsletters()
+        
+        # Group by category
+        by_category = {}
+        for nl in newsletters:
+            cat = nl.get('category', 'Other')
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append(nl)
+        
+        return jsonify({
+            'newsletters': newsletters,
+            'by_category': by_category,
+            'total': len(newsletters)
+        })
+        
+    except Exception as e:
+        logger.error(f"Newsletter list error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/newsletters/scan', methods=['POST'])
+def newsletter_scan():
+    """
+    Scan all newsletters for recent posts and trending tickers.
+    Optionally include AI summary.
+    """
+    if not NEWSLETTER_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Newsletter Scanner not available'}), 503
+    
+    try:
+        scanner = get_newsletter_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        data = request.get_json() or {}
+        posts_per_newsletter = data.get('posts_per_newsletter', 3)
+        
+        logger.info("📰 Scanning newsletters...")
+        
+        results = scanner.scan_all(posts_per_newsletter=posts_per_newsletter)
+        
+        # Optionally add AI summary
+        if data.get('ai_summary', False) and AI_RESEARCH_AVAILABLE:
+            engine = get_research_engine_instance()
+            if engine and results.get('posts'):
+                # Build context from top posts
+                post_titles = [p['title'] for p in results['posts'][:10]]
+                tickers = [t['ticker'] for t in results.get('trending_tickers', [])[:10]]
+                
+                ai_summary = engine.chat(
+                    f"Summarize the key themes from these recent finance newsletter headlines:\n"
+                    + "\n".join(f"- {t}" for t in post_titles) +
+                    f"\n\nTickers mentioned: {', '.join(tickers) if tickers else 'None'}"
+                    f"\n\nWhat are the main investment themes? Any opportunities for a wheel strategy trader? Keep it brief.",
+                    context="You are summarizing finance newsletter content for an options trader."
+                )
+                results['ai_summary'] = ai_summary
+        
+        logger.info(f"✅ Newsletter scan complete: {results['total_posts']} posts from {results['newsletters_scanned']} newsletters")
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        logger.error(f"Newsletter scan error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/newsletters/add', methods=['POST'])
+def newsletter_add():
+    """Add a custom newsletter by URL"""
+    if not NEWSLETTER_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Newsletter Scanner not available'}), 503
+    
+    try:
+        scanner = get_newsletter_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        data = request.get_json() or {}
+        url = data.get('url', '').strip()
+        name = data.get('name', '').strip() or None
+        
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+        
+        result = scanner.add_newsletter(url, name)
+        
+        if result.get('error'):
+            return jsonify(result), 400
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Newsletter add error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/newsletters/remove', methods=['POST'])
+def newsletter_remove():
+    """Remove a custom newsletter"""
+    if not NEWSLETTER_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Newsletter Scanner not available'}), 503
+    
+    try:
+        scanner = get_newsletter_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        data = request.get_json() or {}
+        newsletter_id = data.get('id', '').strip()
+        
+        if not newsletter_id:
+            return jsonify({'error': 'Newsletter ID is required'}), 400
+        
+        result = scanner.remove_newsletter(newsletter_id)
+        
+        if result.get('error'):
+            return jsonify(result), 400
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Newsletter remove error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/newsletters/ticker/<ticker>')
+def newsletter_ticker_mentions(ticker: str):
+    """Find newsletter posts mentioning a specific ticker"""
+    if not NEWSLETTER_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Newsletter Scanner not available'}), 503
+    
+    try:
+        scanner = get_newsletter_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        ticker = ticker.upper().strip()
+        posts = scanner.get_posts_mentioning_ticker(ticker)
+        
+        return jsonify({
+            'ticker': ticker,
+            'posts': posts,
+            'count': len(posts)
+        })
+        
+    except Exception as e:
+        logger.error(f"Newsletter ticker search error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# -------------------------------------------------------------
 # Configuration
 # -------------------------------------------------------------
 # Load environment variables
