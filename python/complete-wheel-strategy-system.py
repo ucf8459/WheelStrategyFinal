@@ -8502,6 +8502,201 @@ def thesis_lab_chat():
         logger.error(f"Chat error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# -------------------------------------------------------------
+# Social Media Scanner - Reddit & StockTwits Integration
+# -------------------------------------------------------------
+try:
+    from social_scanner import get_scanner, SocialScanner
+    SOCIAL_SCANNER_AVAILABLE = True
+    print("✅ Social Scanner module loaded")
+except ImportError as e:
+    SOCIAL_SCANNER_AVAILABLE = False
+    print(f"⚠️ Social Scanner module not available: {e}")
+
+# Global scanner instance
+_social_scanner = None
+
+def get_social_scanner_instance():
+    """Get or create the social scanner singleton"""
+    global _social_scanner
+    if _social_scanner is None and SOCIAL_SCANNER_AVAILABLE:
+        try:
+            _social_scanner = get_scanner()
+        except Exception as e:
+            logger.error(f"Failed to initialize social scanner: {e}")
+            return None
+    return _social_scanner
+
+
+@app.route('/api/social/status')
+def social_scanner_status():
+    """Check Social Scanner status and configuration"""
+    if not SOCIAL_SCANNER_AVAILABLE:
+        return jsonify({
+            'available': False,
+            'error': 'Social Scanner module not installed. Run: pip install praw'
+        })
+    
+    try:
+        scanner = get_social_scanner_instance()
+        if scanner:
+            status = scanner.is_configured()
+            return jsonify({
+                'available': True,
+                'reddit_configured': status.get('reddit', False),
+                'stocktwits_available': status.get('stocktwits', False),
+                'message': status.get('message', ''),
+                'setup_instructions': {
+                    'reddit': {
+                        'step1': 'Go to https://www.reddit.com/prefs/apps',
+                        'step2': 'Click "create another app" at the bottom',
+                        'step3': 'Select "script" type',
+                        'step4': 'Add REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to your .env file',
+                        'step5': 'Optionally add REDDIT_USER_AGENT'
+                    },
+                    'stocktwits': 'No configuration needed - works out of the box'
+                }
+            })
+        else:
+            return jsonify({
+                'available': False,
+                'error': 'Failed to initialize scanner'
+            })
+    except Exception as e:
+        logger.error(f"Social status error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/social/scan', methods=['POST'])
+def social_scan_trending():
+    """
+    Scan social media for trending tickers and themes.
+    This scans Reddit (r/thetagang, r/wallstreetbets, etc.) and StockTwits.
+    """
+    if not SOCIAL_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Social Scanner not available'}), 503
+    
+    try:
+        scanner = get_social_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        logger.info("🔍 Starting social media scan for trending tickers...")
+        
+        # Perform the scan
+        results = scanner.scan_trending()
+        
+        # If AI research is available, optionally enrich top tickers with AI analysis
+        data = request.get_json() or {}
+        enrich_with_ai = data.get('enrich_with_ai', False)
+        
+        if enrich_with_ai and AI_RESEARCH_AVAILABLE:
+            engine = get_research_engine_instance()
+            if engine:
+                top_tickers = [t['ticker'] for t in results.get('combined_trending', [])[:5]]
+                ai_summary = engine.chat(
+                    f"Based on these trending tickers on Reddit and StockTwits today: {', '.join(top_tickers)}. "
+                    f"What themes or sectors are hot right now? Any potential wheel strategy opportunities? "
+                    f"Keep it brief - 2-3 sentences.",
+                    context="You are analyzing social media trends for a wheel strategy options trader."
+                )
+                results['ai_summary'] = ai_summary
+        
+        logger.info(f"✅ Social scan complete: {len(results.get('combined_trending', []))} trending tickers found")
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        logger.error(f"Social scan error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/social/sentiment/<ticker>')
+def social_get_sentiment(ticker: str):
+    """
+    Get comprehensive social sentiment for a specific ticker.
+    Combines data from Reddit and StockTwits.
+    """
+    if not SOCIAL_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Social Scanner not available'}), 503
+    
+    try:
+        ticker = ticker.upper().strip()
+        
+        scanner = get_social_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        logger.info(f"🔍 Getting social sentiment for {ticker}...")
+        
+        # Get sentiment from all sources
+        results = scanner.get_ticker_sentiment(ticker)
+        
+        # Optionally add AI analysis of the sentiment
+        if request.args.get('ai_analysis', 'false').lower() == 'true' and AI_RESEARCH_AVAILABLE:
+            engine = get_research_engine_instance()
+            if engine:
+                # Build context from posts
+                reddit_posts = results.get('reddit', {}).get('posts', [])[:5]
+                st_posts = results.get('stocktwits', {}).get('posts', [])[:5]
+                
+                post_summaries = []
+                for p in reddit_posts:
+                    post_summaries.append(f"Reddit ({p.get('sentiment', 'neutral')}): {p.get('title', '')[:100]}")
+                for p in st_posts:
+                    post_summaries.append(f"StockTwits ({p.get('sentiment', 'neutral')}): {p.get('body', '')[:100]}")
+                
+                if post_summaries:
+                    ai_analysis = engine.chat(
+                        f"Analyze the social sentiment for {ticker}. Here are sample posts:\n"
+                        + "\n".join(post_summaries[:10]) +
+                        f"\n\nOverall sentiment appears to be {results.get('overall_sentiment', 'neutral')}. "
+                        f"What's driving this sentiment? Any key themes or concerns? Keep it brief.",
+                        context="You are analyzing social media sentiment for an options trader."
+                    )
+                    results['ai_analysis'] = ai_analysis
+        
+        logger.info(f"✅ Sentiment for {ticker}: {results.get('overall_sentiment', 'unknown')}")
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        logger.error(f"Sentiment lookup error for {ticker}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/social/trending')
+def social_trending_quick():
+    """
+    Quick endpoint to get just the trending tickers list (cached/lightweight).
+    Good for sidebar widget.
+    """
+    if not SOCIAL_SCANNER_AVAILABLE:
+        return jsonify({'error': 'Social Scanner not available'}), 503
+    
+    try:
+        scanner = get_social_scanner_instance()
+        if not scanner:
+            return jsonify({'error': 'Scanner not initialized'}), 503
+        
+        # Just get StockTwits trending (fast, no auth required)
+        st_trending = scanner.stocktwits.get_trending()
+        
+        return jsonify({
+            'source': 'stocktwits',
+            'trending': st_trending.get('trending', [])[:10],
+            'note': 'Use POST /api/social/scan for full Reddit + StockTwits analysis',
+            'fetched_at': st_trending.get('fetched_at', '')
+        })
+        
+    except Exception as e:
+        logger.error(f"Trending lookup error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # -------------------------------------------------------------
 # Configuration
 # -------------------------------------------------------------

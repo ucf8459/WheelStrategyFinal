@@ -1817,9 +1817,350 @@
             });
         }
         
+        // ============================================================
+        // Social Media Scanner Functions
+        // ============================================================
+        
+        // Check social scanner status on page load
+        function checkSocialStatus() {
+            fetch('/api/social/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('social-status');
+                    if (!statusDiv) return;
+                    
+                    if (data.available) {
+                        let statusHtml = '<div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">';
+                        
+                        // Reddit status
+                        if (data.reddit_configured) {
+                            statusHtml += '<span style="color: var(--success);">✅ Reddit Connected</span>';
+                        } else {
+                            statusHtml += '<span style="color: var(--warning);">⚠️ Reddit: Not configured</span>';
+                        }
+                        
+                        // StockTwits status
+                        if (data.stocktwits_available) {
+                            statusHtml += '<span style="color: var(--success);">✅ StockTwits Ready</span>';
+                        }
+                        
+                        statusHtml += '</div>';
+                        
+                        // Show setup instructions if Reddit not configured
+                        if (!data.reddit_configured && data.setup_instructions) {
+                            statusHtml += `
+                                <details style="margin-top: 0.5rem; font-size: 0.8rem;">
+                                    <summary style="cursor: pointer; color: var(--text-muted);">Setup Reddit API (optional, but recommended)</summary>
+                                    <ol style="margin: 0.5rem 0; padding-left: 1.25rem; color: var(--text-muted);">
+                                        <li>${data.setup_instructions.reddit.step1}</li>
+                                        <li>${data.setup_instructions.reddit.step2}</li>
+                                        <li>${data.setup_instructions.reddit.step3}</li>
+                                        <li>${data.setup_instructions.reddit.step4}</li>
+                                    </ol>
+                                </details>
+                            `;
+                        }
+                        
+                        statusDiv.innerHTML = statusHtml;
+                    } else {
+                        statusDiv.innerHTML = `<span style="color: var(--danger);">❌ ${data.error || 'Social scanner not available'}</span>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Social status error:', error);
+                    const statusDiv = document.getElementById('social-status');
+                    if (statusDiv) {
+                        statusDiv.innerHTML = '<span style="color: var(--danger);">❌ Failed to check social scanner status</span>';
+                    }
+                });
+        }
+        
+        // Run social media scan
+        function runSocialScan(withAI = false) {
+            const resultDiv = document.getElementById('social-result');
+            const scanBtn = document.getElementById('btn-social-scan');
+            const scanAIBtn = document.getElementById('btn-social-scan-ai');
+            
+            resultDiv.innerHTML = '<div style="color: var(--text-muted);">🔍 Scanning Reddit & StockTwits... This may take 30-60 seconds.</div>';
+            scanBtn.disabled = true;
+            scanAIBtn.disabled = true;
+            
+            fetch('/api/social/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enrich_with_ai: withAI })
+            })
+            .then(response => response.json())
+            .then(data => {
+                scanBtn.disabled = false;
+                scanAIBtn.disabled = false;
+                
+                if (data.error) {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                    return;
+                }
+                
+                // Build results HTML
+                let html = '';
+                
+                // AI Summary (if available)
+                if (data.ai_summary) {
+                    html += `
+                        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; border-left: 4px solid var(--secondary);">
+                            <div style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 0.5rem;">🤖 AI Analysis</div>
+                            <div style="font-size: 0.95rem;">${data.ai_summary}</div>
+                        </div>
+                    `;
+                }
+                
+                // Trending tickers
+                const trending = data.combined_trending || [];
+                if (trending.length > 0) {
+                    html += '<div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem;">📈 Trending Tickers (Reddit + StockTwits)</div>';
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem;">';
+                    
+                    trending.slice(0, 15).forEach(t => {
+                        const sentimentColor = t.reddit_sentiment === 'bullish' ? 'var(--success)' : 
+                                              t.reddit_sentiment === 'bearish' ? 'var(--danger)' : 'var(--text-muted)';
+                        const sentimentIcon = t.reddit_sentiment === 'bullish' ? '🟢' : 
+                                             t.reddit_sentiment === 'bearish' ? '🔴' : '⚪';
+                        
+                        html += `
+                            <div style="background: #334155; border-radius: 8px; padding: 0.75rem; cursor: pointer;" 
+                                 onclick="document.getElementById('social-ticker-input').value='${t.ticker}'; getSocialSentiment();">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="font-weight: bold; font-size: 1.1rem;">${t.ticker}</span>
+                                    <span style="font-size: 0.8rem;">${sentimentIcon}</span>
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                                    ${t.reddit_mentions || 0} Reddit • ${t.stocktwits_watchers || 0} ST
+                                </div>
+                                ${t.reddit_bullish_pct > 0 ? `<div style="font-size: 0.75rem; color: ${sentimentColor};">${t.reddit_bullish_pct}% bullish</div>` : ''}
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                // Recent posts (from Reddit)
+                const redditPosts = data.reddit?.posts || [];
+                if (redditPosts.length > 0) {
+                    html += `
+                        <details style="margin-top: 1rem;">
+                            <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.9rem;">
+                                📝 Recent Reddit Posts (${redditPosts.length})
+                            </summary>
+                            <div style="margin-top: 0.75rem; max-height: 300px; overflow-y: auto;">
+                    `;
+                    
+                    redditPosts.slice(0, 10).forEach(p => {
+                        const sentimentBadge = p.sentiment === 'bullish' ? 
+                            '<span style="background: var(--success); color: white; font-size: 0.7rem; padding: 0.1rem 0.3rem; border-radius: 3px;">BULLISH</span>' :
+                            p.sentiment === 'bearish' ?
+                            '<span style="background: var(--danger); color: white; font-size: 0.7rem; padding: 0.1rem 0.3rem; border-radius: 3px;">BEARISH</span>' :
+                            '<span style="background: #475569; color: white; font-size: 0.7rem; padding: 0.1rem 0.3rem; border-radius: 3px;">NEUTRAL</span>';
+                        
+                        html += `
+                            <div style="background: #1e293b; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; border-left: 2px solid #475569;">
+                                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
+                                    <span style="font-size: 0.75rem; color: var(--text-muted);">r/${p.subreddit}</span>
+                                    ${sentimentBadge}
+                                    <span style="font-size: 0.75rem; color: var(--text-muted);">⬆️ ${p.score}</span>
+                                </div>
+                                <a href="${p.url}" target="_blank" style="color: var(--text-primary); text-decoration: none; font-size: 0.9rem;">
+                                    ${p.title}
+                                </a>
+                                <div style="font-size: 0.75rem; color: var(--secondary); margin-top: 0.25rem;">
+                                    Tickers: ${p.tickers.join(', ')}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div></details>';
+                }
+                
+                // Scan timestamp
+                html += `<div style="margin-top: 1rem; font-size: 0.75rem; color: var(--text-muted);">Scanned at: ${data.scanned_at || 'Unknown'}</div>`;
+                
+                resultDiv.innerHTML = html;
+            })
+            .catch(error => {
+                scanBtn.disabled = false;
+                scanAIBtn.disabled = false;
+                resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+            });
+        }
+        
+        // Quick sentiment check from Quick Screen tab
+        function quickSentimentCheck() {
+            const ticker = document.getElementById('quick-screen-ticker').value.trim().toUpperCase();
+            if (!ticker) {
+                alert('Please enter a ticker symbol first');
+                return;
+            }
+            // Switch to social tab and fill in the ticker
+            document.getElementById('social-ticker-input').value = ticker;
+            switchThesisTab('social');
+            getSocialSentiment(true);  // Include AI analysis
+        }
+        
+        // Get sentiment for specific ticker
+        function getSocialSentiment(withAI = false) {
+            const ticker = document.getElementById('social-ticker-input').value.trim().toUpperCase();
+            const resultDiv = document.getElementById('social-result');
+            
+            if (!ticker) {
+                resultDiv.innerHTML = '<div style="color: var(--warning);">Please enter a ticker symbol</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = `<div style="color: var(--text-muted);">🔍 Getting sentiment for ${ticker}...</div>`;
+            
+            const aiParam = withAI ? '?ai_analysis=true' : '';
+            
+            fetch(`/api/social/sentiment/${ticker}${aiParam}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${data.error}</div>`;
+                        return;
+                    }
+                    
+                    // Build sentiment display
+                    const sentimentColor = data.overall_sentiment === 'bullish' ? 'var(--success)' :
+                                          data.overall_sentiment === 'bearish' ? 'var(--danger)' : 'var(--text-muted)';
+                    const sentimentEmoji = data.overall_sentiment === 'bullish' ? '🟢' :
+                                          data.overall_sentiment === 'bearish' ? '🔴' : '⚪';
+                    
+                    let html = `
+                        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%); border-radius: 12px; padding: 1.25rem; border-left: 4px solid ${sentimentColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <div>
+                                    <span style="font-size: 1.5rem; font-weight: bold;">${data.ticker}</span>
+                                    <span style="margin-left: 0.75rem; font-size: 1.25rem;">${sentimentEmoji}</span>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 1.1rem; color: ${sentimentColor}; font-weight: bold; text-transform: uppercase;">${data.overall_sentiment}</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Confidence: ${Math.round(data.confidence * 100)}%</div>
+                                </div>
+                            </div>
+                            
+                            <div style="font-size: 0.9rem; margin-bottom: 1rem;">${data.summary}</div>
+                    `;
+                    
+                    // AI Analysis if available
+                    if (data.ai_analysis) {
+                        html += `
+                            <div style="background: rgba(34, 211, 238, 0.1); border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem;">
+                                <div style="font-size: 0.8rem; color: var(--secondary); margin-bottom: 0.25rem;">🤖 AI Analysis</div>
+                                <div style="font-size: 0.9rem;">${data.ai_analysis}</div>
+                            </div>
+                        `;
+                    }
+                    
+                    // Sentiment breakdown
+                    html += `
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1rem;">
+                            <div style="text-align: center; padding: 0.5rem; background: rgba(16, 185, 129, 0.1); border-radius: 6px;">
+                                <div style="font-size: 1.1rem; font-weight: bold; color: var(--success);">${data.reddit?.bullish_pct || 0}%</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Bullish</div>
+                            </div>
+                            <div style="text-align: center; padding: 0.5rem; background: rgba(148, 163, 184, 0.1); border-radius: 6px;">
+                                <div style="font-size: 1.1rem; font-weight: bold;">${data.reddit?.neutral_pct || 0}%</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Neutral</div>
+                            </div>
+                            <div style="text-align: center; padding: 0.5rem; background: rgba(239, 68, 68, 0.1); border-radius: 6px;">
+                                <div style="font-size: 1.1rem; font-weight: bold; color: var(--danger);">${data.reddit?.bearish_pct || 0}%</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Bearish</div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Recent posts
+                    const posts = [...(data.reddit?.posts || []), ...(data.stocktwits?.posts || [])].slice(0, 8);
+                    if (posts.length > 0) {
+                        html += `
+                            <details>
+                                <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.85rem;">Recent Posts (${posts.length})</summary>
+                                <div style="margin-top: 0.75rem; max-height: 250px; overflow-y: auto;">
+                        `;
+                        
+                        posts.forEach(p => {
+                            const title = p.title || p.body || 'No content';
+                            const source = p.subreddit ? `r/${p.subreddit}` : 'StockTwits';
+                            
+                            html += `
+                                <div style="background: #1e293b; border-radius: 4px; padding: 0.5rem; margin-bottom: 0.5rem; font-size: 0.85rem;">
+                                    <span style="color: var(--text-muted); font-size: 0.75rem;">${source}</span>
+                                    <div>${title.substring(0, 150)}${title.length > 150 ? '...' : ''}</div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div></details>';
+                    }
+                    
+                    html += '</div>';
+                    
+                    resultDiv.innerHTML = html;
+                })
+                .catch(error => {
+                    resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
+                });
+        }
+        
+        // Refresh social trending widget
+        function refreshSocialTrending() {
+            const container = document.getElementById('social-trending-container');
+            if (!container) return;
+            
+            container.innerHTML = '<div class="section-label">Loading trending tickers...</div>';
+            
+            fetch('/api/social/trending')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = `<div class="section-label" style="color: var(--warning);">${data.error}</div>`;
+                        return;
+                    }
+                    
+                    const trending = data.trending || [];
+                    if (trending.length === 0) {
+                        container.innerHTML = '<div class="section-label">No trending data available</div>';
+                        return;
+                    }
+                    
+                    let html = '';
+                    trending.slice(0, 8).forEach((t, i) => {
+                        html += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border); cursor: pointer;"
+                                 onclick="document.getElementById('social-ticker-input').value='${t.ticker}'; switchThesisTab('social'); getSocialSentiment();">
+                                <div>
+                                    <span style="font-weight: bold; color: var(--text-primary);">${t.ticker}</span>
+                                    <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem;">${t.title ? t.title.substring(0, 20) : ''}</span>
+                                </div>
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">${t.watchers ? t.watchers.toLocaleString() + ' 👀' : ''}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    html += `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; text-align: right;">via StockTwits</div>`;
+                    
+                    container.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Social trending error:', error);
+                    container.innerHTML = '<div class="section-label" style="color: var(--danger);">Failed to load</div>';
+                });
+        }
+        
         // Initialize Thesis Lab on page load
         document.addEventListener('DOMContentLoaded', function() {
             checkThesisLabStatus();
+            checkSocialStatus();  // Also check social scanner
+            refreshSocialTrending();  // Load trending tickers widget
         });
 
         // Update win streak management
@@ -3646,6 +3987,7 @@
                         <!-- Mode Tabs -->
                         <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
                             <button class="btn btn-primary btn-sm thesis-tab active" data-tab="discover" onclick="switchThesisTab('discover')">🔍 Discover</button>
+                            <button class="btn btn-secondary btn-sm thesis-tab" data-tab="social" onclick="switchThesisTab('social')">📱 Social</button>
                             <button class="btn btn-secondary btn-sm thesis-tab" data-tab="quick-screen" onclick="switchThesisTab('quick-screen')">Quick Screen</button>
                             <button class="btn btn-secondary btn-sm thesis-tab" data-tab="full-research" onclick="switchThesisTab('full-research')">Full Research</button>
                             <button class="btn btn-secondary btn-sm thesis-tab" data-tab="compare" onclick="switchThesisTab('compare')">Compare</button>
@@ -3662,6 +4004,45 @@
                             <div id="discover-result" style="margin-top: 1rem;"></div>
                         </div>
                         
+                        <!-- Social Tab - Reddit & StockTwits Scanning -->
+                        <div id="tab-social" class="thesis-tab-content" style="display: none;">
+                            <div style="margin-bottom: 1rem;">
+                                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                                    Scan Reddit (r/thetagang, r/wallstreetbets, r/stocks, etc.) and StockTwits for trending tickers and sentiment.
+                                </p>
+                                
+                                <!-- Social Status -->
+                                <div id="social-status" style="margin-bottom: 1rem; padding: 0.75rem; background-color: #334155; border-radius: 8px; border: 1px solid var(--border);">
+                                    <span style="color: var(--text-muted);">Checking social scanner status...</span>
+                                </div>
+                                
+                                <!-- Scan Controls -->
+                                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                                    <button class="btn btn-primary" onclick="runSocialScan()" id="btn-social-scan">
+                                        🔍 Scan Trending
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="runSocialScan(true)" id="btn-social-scan-ai">
+                                        🤖 Scan + AI Analysis
+                                    </button>
+                                </div>
+                                
+                                <!-- Ticker Sentiment Lookup -->
+                                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                                        Get Sentiment for Specific Ticker
+                                    </label>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <input type="text" id="social-ticker-input" placeholder="NVDA" style="width: 100px; text-transform: uppercase;">
+                                        <button class="btn btn-secondary btn-sm" onclick="getSocialSentiment()">Get Sentiment</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="getSocialSentiment(true)">+ AI Analysis</button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Results Area -->
+                            <div id="social-result" style="margin-top: 1rem;"></div>
+                        </div>
+                        
                         <!-- Quick Screen Tab -->
                         <div id="tab-quick-screen" class="thesis-tab-content" style="display: none;">
                             <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
@@ -3670,6 +4051,7 @@
                                     <input type="text" id="quick-screen-ticker" placeholder="AAPL" style="width: 100%; text-transform: uppercase;">
                                 </div>
                                 <button class="btn btn-primary" onclick="runQuickScreen()">Screen</button>
+                                <button class="btn btn-secondary" onclick="quickSentimentCheck()" title="Check social media sentiment">📱 Sentiment</button>
                             </div>
                             <div id="quick-screen-result" style="margin-top: 1rem;"></div>
                         </div>
@@ -3796,6 +4178,24 @@
                                     <strong id="win-streak-risk">Loading...</strong>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Social Trending Tickers Widget -->
+                    <div class="card" id="social-trending-card">
+                        <div class="card-header">
+                            <h2>📱 Social Buzz</h2>
+                            <button class="btn btn-secondary btn-sm" onclick="refreshSocialTrending()" title="Refresh">↻</button>
+                        </div>
+                        
+                        <div id="social-trending-container" style="max-height: 250px; overflow-y: auto;">
+                            <div class="section-label">Loading trending tickers...</div>
+                        </div>
+                        
+                        <div style="margin-top: 0.75rem; text-align: center;">
+                            <button class="btn btn-secondary btn-sm" onclick="switchThesisTab('social'); document.getElementById('thesis-lab-card').scrollIntoView({behavior: 'smooth'});">
+                                Full Social Scan →
+                            </button>
                         </div>
                     </div>
                     
