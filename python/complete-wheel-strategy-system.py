@@ -790,14 +790,41 @@ NEVER trigger stop losses on option P&L percentages!
             'iv_percentile': self.calculate_vix_percentile()
         }
     
+    # Cache for VIX data to avoid rate limiting
+    _vix_cache = {'data': None, 'timestamp': None, 'percentile': 50.0}
+    
     def calculate_vix_percentile(self) -> float:
-        """Calculate current VIX percentile for regime detection"""
-        vix = yf.Ticker('^VIX')
-        vix_hist = vix.history(period='1y')
-        current_vix = vix_hist['Close'].iloc[-1]
+        """Calculate current VIX percentile for regime detection (cached to avoid rate limits)"""
+        import time as _time
         
-        percentile = (vix_hist['Close'] < current_vix).mean() * 100
-        return percentile
+        # Check cache - refresh only every 15 minutes
+        cache = WheelMonitor._vix_cache
+        now = _time.time()
+        if cache['timestamp'] and (now - cache['timestamp']) < 900:  # 15 min cache
+            return cache['percentile']
+        
+        try:
+            vix = yf.Ticker('^VIX')
+            vix_hist = vix.history(period='1y')
+            
+            if vix_hist.empty:
+                logger.warning("VIX data empty, using cached value")
+                return cache['percentile']
+            
+            current_vix = vix_hist['Close'].iloc[-1]
+            percentile = (vix_hist['Close'] < current_vix).mean() * 100
+            
+            # Update cache
+            cache['data'] = vix_hist
+            cache['timestamp'] = now
+            cache['percentile'] = percentile
+            
+            logger.info(f"VIX percentile updated: {percentile:.1f}%")
+            return percentile
+            
+        except Exception as e:
+            logger.warning(f"VIX fetch failed ({e}), using cached value: {cache['percentile']}")
+            return cache['percentile']
     
     def check_liquidity(self, symbol: str) -> Dict:
         """Check if option meets liquidity requirements"""
@@ -6307,8 +6334,13 @@ class WheelDashboard:
             logger.error(f"❌ Error in _get_positions_async: {e}")
             raise RuntimeError(f"Failed to get positions from IBKR: {e}")
         
+    # Cache for opportunities to avoid repeated failures
+    _opportunities_cache = {'data': [], 'timestamp': None}
+    
     async def _get_opportunities_async(self):
-        """Get new wheel opportunities asynchronously"""
+        """Get new wheel opportunities asynchronously (with graceful fallback)"""
+        import time as _time
+        
         try:
             print("\nScanning for opportunities...")
             opportunities = await self.scanner.scan_opportunities_async()
@@ -6329,14 +6361,23 @@ class WheelDashboard:
                     formatted_opps.append(formatted_opp)
                 except Exception as e:
                     logger.error(f"Error formatting opportunity {opp}: {e}")
-                    raise RuntimeError(f"Failed to format opportunity: {e}")
+                    continue  # Skip bad opportunities instead of failing entirely
             
             sorted_opps = sorted(formatted_opps, key=lambda x: x['annual_return'], reverse=True)
             print(f"\nFinal opportunities: {json.dumps(sorted_opps, indent=2)}")
+            
+            # Update cache on success
+            DashboardManager._opportunities_cache = {'data': sorted_opps, 'timestamp': _time.time()}
+            
             return sorted_opps
+            
         except Exception as e:
-            logger.error(f"Error getting opportunities: {e}")
-            raise RuntimeError(f"Failed to get opportunities: {e}")
+            logger.warning(f"Opportunity scan failed ({e}), using cached data")
+            # Return cached data instead of failing
+            cache = DashboardManager._opportunities_cache
+            if cache['data']:
+                return cache['data']
+            return []  # Return empty list rather than crashing
     
     async def _get_ibkr_delta_async(self, contract, contract_type):
         """Get actual delta from IBKR asynchronously - HARD FAIL if can't get live data"""
