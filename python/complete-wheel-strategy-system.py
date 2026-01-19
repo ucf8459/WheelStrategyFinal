@@ -4983,11 +4983,21 @@ def handle_connect():
     try:
         if current_positions is None or current_metrics is None:
             raise RuntimeError("No real data available - dashboard not ready")
+        
+        # Check IBKR connection status
+        ibkr_connected = False
+        if dashboard and dashboard.monitor and dashboard.monitor.ib:
+            ibkr_connected = dashboard.monitor.ib.isConnected()
+        elif monitor and monitor.ib:
+            ibkr_connected = monitor.ib.isConnected()
+        
         data = {
             'positions': current_positions,
             'metrics': current_metrics,
             'opportunities': [],
-            'alerts': []
+            'alerts': [],
+            'ibkr_connected': ibkr_connected,
+            'last_ibkr_update': datetime.now().isoformat() if ibkr_connected else current_account_data.get('last_updated') if current_account_data else None
         }
         socketio.emit('update', data)
         print('Sent initial data to connected client')
@@ -6162,11 +6172,16 @@ class WheelDashboard:
             for alert in alerts:
                 print(json.dumps(alert, indent=2, default=str))
             
+            # Check IBKR connection status
+            ibkr_connected = self.monitor.ib.isConnected() if self.monitor and self.monitor.ib else False
+            
             data = {
                 'positions': positions,
                 'opportunities': opportunities,
                 'metrics': metrics,
-                'alerts': alerts
+                'alerts': alerts,
+                'ibkr_connected': ibkr_connected,
+                'last_ibkr_update': datetime.now().isoformat() if ibkr_connected else None
             }
             
             print("\n6. RECORDING DAILY SNAPSHOT")
@@ -8939,6 +8954,207 @@ def newsletter_ticker_mentions(ticker: str):
         
     except Exception as e:
         logger.error(f"Newsletter ticker search error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# -------------------------------------------------------------
+# Multi-Brokerage API Endpoints
+# -------------------------------------------------------------
+
+# Global aggregator instance
+_brokerage_aggregator = None
+
+def get_brokerage_aggregator():
+    """Get or create the brokerage aggregator instance."""
+    global _brokerage_aggregator
+    if _brokerage_aggregator is None:
+        try:
+            from brokerage_aggregator import BrokerageAggregator
+            _brokerage_aggregator = BrokerageAggregator()
+            # Set IBKR monitor if available
+            if 'monitor' in globals() and monitor:
+                _brokerage_aggregator.set_ibkr_monitor(monitor)
+            elif 'dashboard' in globals() and dashboard and dashboard.monitor:
+                _brokerage_aggregator.set_ibkr_monitor(dashboard.monitor)
+            logger.info("✅ Brokerage aggregator initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize brokerage aggregator: {e}")
+    return _brokerage_aggregator
+
+
+@app.route('/api/brokerages/status')
+def brokerages_status():
+    """Get connection status for all configured brokerages."""
+    try:
+        aggregator = get_brokerage_aggregator()
+        if not aggregator:
+            return jsonify({'error': 'Aggregator not available'}), 503
+        
+        return jsonify(aggregator.get_status_summary())
+        
+    except Exception as e:
+        logger.error(f"Brokerage status error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/brokerages/portfolio')
+def brokerages_portfolio():
+    """Get aggregated portfolio from all connected brokerages."""
+    try:
+        aggregator = get_brokerage_aggregator()
+        if not aggregator:
+            return jsonify({'error': 'Aggregator not available'}), 503
+        
+        return jsonify(aggregator.to_dashboard_format())
+        
+    except Exception as e:
+        logger.error(f"Brokerage portfolio error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/brokerages/accounts')
+def brokerages_accounts():
+    """Get list of all accounts across all brokerages."""
+    try:
+        aggregator = get_brokerage_aggregator()
+        if not aggregator:
+            return jsonify({'error': 'Aggregator not available'}), 503
+        
+        portfolio = aggregator.get_aggregated_portfolio()
+        return jsonify({
+            'accounts': portfolio.accounts,
+            'total_value': portfolio.total_value,
+            'total_positions': portfolio.total_positions
+        })
+        
+    except Exception as e:
+        logger.error(f"Brokerage accounts error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/etrade/status')
+def etrade_status():
+    """Check E*TRADE connection status."""
+    try:
+        from etrade_connector import ETradeConnector, PYETRADE_AVAILABLE
+        
+        if not PYETRADE_AVAILABLE:
+            return jsonify({
+                'available': False,
+                'connected': False,
+                'error': 'pyetrade library not installed. Run: pip install pyetrade requests-oauthlib'
+            })
+        
+        connector = ETradeConnector()
+        
+        return jsonify({
+            'available': True,
+            'connected': connector.is_connected(),
+            'error': connector.get_last_error() if not connector.is_connected() else None,
+            'needs_authorization': not connector.is_connected(),
+            'authorization_instructions': 'Run: python etrade_connector.py to authorize' if not connector.is_connected() else None
+        })
+        
+    except Exception as e:
+        logger.error(f"E*TRADE status error: {e}")
+        return jsonify({
+            'available': False,
+            'connected': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/etrade/authorize/start', methods=['POST'])
+def etrade_authorize_start():
+    """Start E*TRADE OAuth authorization flow."""
+    try:
+        from etrade_connector import ETradeConnector, PYETRADE_AVAILABLE
+        
+        if not PYETRADE_AVAILABLE:
+            return jsonify({'error': 'pyetrade not installed'}), 503
+        
+        connector = ETradeConnector()
+        auth_url = connector.get_authorization_url()
+        
+        if auth_url:
+            return jsonify({
+                'success': True,
+                'authorization_url': auth_url,
+                'instructions': 'Open this URL, log in to E*TRADE, authorize the app, then call /api/etrade/authorize/complete with the verification code'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': connector.get_last_error() or 'Failed to get authorization URL'
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"E*TRADE auth start error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/etrade/authorize/complete', methods=['POST'])
+def etrade_authorize_complete():
+    """Complete E*TRADE OAuth authorization with verifier code."""
+    try:
+        from etrade_connector import ETradeConnector, PYETRADE_AVAILABLE
+        
+        if not PYETRADE_AVAILABLE:
+            return jsonify({'error': 'pyetrade not installed'}), 503
+        
+        data = request.get_json() or {}
+        verifier = data.get('verifier_code', '').strip()
+        
+        if not verifier:
+            return jsonify({'error': 'verifier_code is required'}), 400
+        
+        connector = ETradeConnector()
+        
+        # Need to start OAuth flow first if not already started
+        if not connector.oauth:
+            connector.get_authorization_url()
+        
+        if connector.complete_authorization(verifier):
+            summary = connector.get_summary()
+            return jsonify({
+                'success': True,
+                'message': 'Successfully connected to E*TRADE!',
+                'accounts': summary.get('account_count', 0),
+                'total_value': summary.get('total_value', 0),
+                'positions': summary.get('total_positions', 0)
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': connector.get_last_error() or 'Authorization failed'
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"E*TRADE auth complete error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/etrade/portfolio')
+def etrade_portfolio():
+    """Get E*TRADE portfolio data."""
+    try:
+        from etrade_connector import ETradeConnector, PYETRADE_AVAILABLE
+        
+        if not PYETRADE_AVAILABLE:
+            return jsonify({'error': 'pyetrade not installed'}), 503
+        
+        connector = ETradeConnector()
+        
+        if not connector.is_connected():
+            return jsonify({
+                'error': 'Not connected to E*TRADE',
+                'needs_authorization': True
+            }), 401
+        
+        return jsonify(connector.get_summary())
+        
+    except Exception as e:
+        logger.error(f"E*TRADE portfolio error: {e}")
         return jsonify({'error': str(e)}), 500
 
 

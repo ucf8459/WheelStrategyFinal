@@ -108,6 +108,101 @@
             background-color: var(--warning);
         }
         
+        /* IBKR Connection Status Banner */
+        .ibkr-status-banner {
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .ibkr-status-banner.ibkr-live {
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%);
+            border-bottom: 2px solid var(--success);
+            color: var(--success);
+        }
+        
+        .ibkr-status-banner.ibkr-offline {
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%);
+            border-bottom: 2px solid var(--danger);
+            color: var(--danger);
+        }
+        
+        .ibkr-status-banner.ibkr-stale {
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%);
+            border-bottom: 2px solid var(--warning);
+            color: var(--warning);
+        }
+        
+        .ibkr-status-content {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .ibkr-timestamp {
+            font-size: 0.85rem;
+            opacity: 0.8;
+            font-weight: 400;
+        }
+        
+        .ibkr-detail {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+        
+        .ibkr-live .ibkr-detail {
+            display: none;
+        }
+        
+        /* Data Source Badge for Account Value */
+        .data-source-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+        
+        .data-source-badge.live {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+        
+        .data-source-badge.offline {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+        
+        .data-source-badge.stale {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+        
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+        
         /* DTE Color Coding */
         .dte-red {
             color: var(--danger) !important;
@@ -706,9 +801,66 @@
             });
         }
         
+        // Track IBKR connection status
+        let lastIbkrUpdate = null;
+        let ibkrConnected = false;
+        
+        function updateIbkrStatus(connected, timestamp) {
+            ibkrConnected = connected;
+            lastIbkrUpdate = timestamp || new Date().toISOString();
+            
+            const banner = document.getElementById('ibkr-status-banner');
+            const icon = document.getElementById('ibkr-status-icon');
+            const text = document.getElementById('ibkr-status-text');
+            const timestampEl = document.getElementById('ibkr-last-update');
+            const detail = document.getElementById('ibkr-status-detail');
+            const badge = document.getElementById('data-source-badge');
+            const badgeText = document.getElementById('data-source-text');
+            
+            if (connected) {
+                banner.className = 'ibkr-status-banner ibkr-live';
+                icon.textContent = '🟢';
+                text.textContent = 'LIVE DATA from IBKR';
+                timestampEl.textContent = '• Last update: ' + new Date(lastIbkrUpdate).toLocaleTimeString();
+                detail.textContent = '';
+                badge.className = 'data-source-badge live';
+                badgeText.textContent = 'LIVE';
+            } else {
+                // Check if data is stale (more than 5 minutes old)
+                const isStale = lastIbkrUpdate && (Date.now() - new Date(lastIbkrUpdate).getTime() > 5 * 60 * 1000);
+                
+                if (isStale) {
+                    banner.className = 'ibkr-status-banner ibkr-stale';
+                    icon.textContent = '🟡';
+                    text.textContent = 'STALE DATA';
+                    timestampEl.textContent = '• Last update: ' + new Date(lastIbkrUpdate).toLocaleTimeString();
+                    detail.textContent = 'IBKR disconnected - data may be outdated';
+                    badge.className = 'data-source-badge stale';
+                    badgeText.textContent = 'STALE';
+                } else {
+                    banner.className = 'ibkr-status-banner ibkr-offline';
+                    icon.textContent = '🔴';
+                    text.textContent = 'OFFLINE - No IBKR Connection';
+                    timestampEl.textContent = lastIbkrUpdate ? '• Last seen: ' + new Date(lastIbkrUpdate).toLocaleTimeString() : '';
+                    detail.textContent = 'Start TWS or IB Gateway with API enabled on port 7496';
+                    badge.className = 'data-source-badge offline';
+                    badgeText.textContent = 'OFFLINE';
+                }
+            }
+        }
+        
         // Update dashboard with live data
         function updateDashboard(data) {
             console.log('Updating dashboard with data:', data);
+            
+            // Update IBKR connection status
+            if (data.ibkr_connected !== undefined) {
+                updateIbkrStatus(data.ibkr_connected, data.last_ibkr_update);
+            } else {
+                // If no explicit status, infer from metrics
+                const hasRealData = data.metrics && data.metrics.account_value && data.metrics.account_value > 0;
+                updateIbkrStatus(hasRealData, hasRealData ? new Date().toISOString() : lastIbkrUpdate);
+            }
             
             // Update positions
             if (data.positions) {
@@ -2110,6 +2262,137 @@
                     resultDiv.innerHTML = `<div style="color: var(--danger);">Error: ${error.message}</div>`;
                 });
         }
+        
+        // Multi-Brokerage Functions
+        function refreshBrokerages() {
+            const container = document.getElementById('brokerage-accounts-container');
+            const totalValue = document.getElementById('total-portfolio-value');
+            const lastUpdate = document.getElementById('brokerage-last-update');
+            
+            if (!container) return;
+            
+            container.innerHTML = '<div class="section-label">Loading accounts...</div>';
+            
+            fetch('/api/brokerages/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = `<div class="section-label" style="color: var(--warning);">${data.error}</div>`;
+                        return;
+                    }
+                    
+                    // Update total value
+                    const summary = data.summary || {};
+                    if (totalValue) {
+                        totalValue.textContent = '$' + (summary.total_value || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    }
+                    
+                    // Build accounts display
+                    let html = '';
+                    
+                    // IBKR Account
+                    const ibkr = data.IBKR || {};
+                    html += buildBrokerageRow('IBKR', ibkr);
+                    
+                    // E*TRADE Account(s)
+                    const etrade = data.ETRADE || {};
+                    html += buildBrokerageRow('E*TRADE', etrade);
+                    
+                    container.innerHTML = html;
+                    
+                    // Update last refresh time
+                    if (lastUpdate) {
+                        lastUpdate.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+                    }
+                })
+                .catch(error => {
+                    console.error('Brokerage fetch error:', error);
+                    container.innerHTML = `<div class="section-label" style="color: var(--danger);">Error loading accounts</div>`;
+                });
+        }
+        
+        function buildBrokerageRow(name, data) {
+            const connected = data.connected || false;
+            const value = data.total_value || 0;
+            const positions = data.position_count || 0;
+            const error = data.error || '';
+            
+            const statusIcon = connected ? '🟢' : '🔴';
+            const statusClass = connected ? 'live' : 'offline';
+            
+            let detailText = '';
+            if (connected) {
+                detailText = `${positions} positions`;
+            } else if (error) {
+                // Shorten common errors
+                if (error.includes('Not connected') || error.includes('not authenticated')) {
+                    detailText = name === 'E*TRADE' ? 'Not authorized' : 'Not connected';
+                } else {
+                    detailText = error.substring(0, 30);
+                }
+            } else {
+                detailText = 'Not configured';
+            }
+            
+            return `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span>${statusIcon}</span>
+                        <div>
+                            <div style="font-weight: 600; color: var(--text-primary);">${name}</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted);">${detailText}</div>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        ${connected ? `<div style="font-weight: bold;">$${value.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</div>` : ''}
+                        ${!connected && name === 'E*TRADE' ? `<button class="btn btn-secondary btn-sm" onclick="showEtradeSetup()" style="font-size: 0.65rem; padding: 0.2rem 0.5rem;">Connect</button>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function showEtradeSetup() {
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999;';
+            modal.innerHTML = `
+                <div style="background: var(--card-bg); border-radius: 12px; padding: 2rem; max-width: 500px; width: 90%; border: 1px solid var(--border);">
+                    <h3 style="margin-top: 0; color: var(--primary);">🔗 Connect E*TRADE</h3>
+                    
+                    <div id="etrade-setup-step1">
+                        <p style="color: var(--text-muted);">To connect your E*TRADE account, you'll need API credentials:</p>
+                        
+                        <ol style="color: var(--text-primary); line-height: 1.8;">
+                            <li>Go to <a href="https://developer.etrade.com" target="_blank" style="color: var(--primary);">developer.etrade.com</a></li>
+                            <li>Create a new application</li>
+                            <li>Copy your <strong>Consumer Key</strong> and <strong>Consumer Secret</strong></li>
+                            <li>Add them to your <code>.env</code> file:
+                                <pre style="background: var(--bg); padding: 0.5rem; border-radius: 4px; font-size: 0.8rem; overflow-x: auto;">ETRADE_CONSUMER_KEY=your_key
+ETRADE_CONSUMER_SECRET=your_secret</pre>
+                            </li>
+                            <li>Restart the dashboard</li>
+                            <li>Run the authorization command:
+                                <pre style="background: var(--bg); padding: 0.5rem; border-radius: 4px; font-size: 0.8rem;">python etrade_connector.py</pre>
+                            </li>
+                        </ol>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+                        <button class="btn btn-secondary" onclick="this.closest('div[style*=\"position: fixed\"]').remove()">Close</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+        
+        // Load brokerages on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshBrokerages();
+            // Refresh every 60 seconds
+            setInterval(refreshBrokerages, 60000);
+        });
         
         // Refresh social trending widget
         function refreshSocialTrending() {
@@ -3979,6 +4262,19 @@
             <span id="system-status-text">Loading...</span>
         </div>
     </header>
+    
+    <!-- IBKR Connection Status Banner -->
+    <div id="ibkr-status-banner" class="ibkr-status-banner ibkr-offline">
+        <div class="ibkr-status-content">
+            <span id="ibkr-status-icon">⚠️</span>
+            <span id="ibkr-status-text">Connecting to IBKR...</span>
+            <span id="ibkr-last-update" class="ibkr-timestamp"></span>
+        </div>
+        <div id="ibkr-status-detail" class="ibkr-detail">
+            Start TWS or IB Gateway with API enabled on port 7496
+        </div>
+    </div>
+    
     <!-- DEBUG BANNER - Hidden by default, shown only during initial loading -->
     <div id="debug-banner" style="background: #ffeeba; color: #856404; padding: 8px; font-size: 0.9rem; border-bottom: 1px solid #ffeeba; font-family: monospace; overflow-x: auto; white-space: pre; display: none;">
         Loading data...
@@ -3999,8 +4295,14 @@
                     
                     <div class="metric-grid">
                         <div class="metric-card">
-                            <div class="metric-label">Account Value</div>
-                            <div id="account-value" class="metric-value">Loading...</div>
+                            <div class="metric-label">
+                                Account Value
+                                <span id="data-source-badge" class="data-source-badge offline">
+                                    <span class="pulse-dot"></span>
+                                    <span id="data-source-text">OFFLINE</span>
+                                </span>
+                            </div>
+                            <div id="account-value" class="metric-value">--</div>
                             <div id="daily-change" class="section-label">--</div>
                         </div>
                         <div class="metric-card">
@@ -4541,6 +4843,29 @@
                                     <strong id="win-streak-risk">Loading...</strong>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Multi-Brokerage Accounts -->
+                    <div class="card" id="multi-brokerage-card">
+                        <div class="card-header">
+                            <h2>🏦 All Accounts</h2>
+                            <button class="btn btn-secondary btn-sm" onclick="refreshBrokerages()" title="Refresh">↻</button>
+                        </div>
+                        
+                        <div id="brokerage-summary" style="margin-bottom: 0.75rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                <span class="section-label">Combined Value</span>
+                                <span id="total-portfolio-value" style="font-size: 1.25rem; font-weight: bold;">--</span>
+                            </div>
+                        </div>
+                        
+                        <div id="brokerage-accounts-container">
+                            <div class="section-label">Loading accounts...</div>
+                        </div>
+                        
+                        <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted);">
+                            <span id="brokerage-last-update">--</span>
                         </div>
                     </div>
                     
