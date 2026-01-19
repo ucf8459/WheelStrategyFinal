@@ -6186,22 +6186,50 @@ class WheelDashboard:
             
             print("\n6. RECORDING DAILY SNAPSHOT")
             # Record daily snapshot to database for performance tracking
-            if DB_AVAILABLE and account_value and account_value > 0:
+            # Use synchronous accountValues() as fallback if async fetch failed
+            snapshot_account_value = account_value
+            snapshot_buying_power = 0
+            snapshot_cash_balance = 0
+            snapshot_unrealized_pnl = 0
+            
+            if not snapshot_account_value or snapshot_account_value == 0:
+                # Fallback: try synchronous fetch (same as live-metrics endpoint)
                 try:
-                    buying_power = float(next((item.value for item in account_summary if item.tag == 'BuyingPower'), 0))
-                    cash_balance = float(next((item.value for item in account_summary if item.tag == 'TotalCashValue'), 0))
-                    unrealized_pnl = float(next((item.value for item in account_summary if item.tag == 'UnrealizedPnL'), 0))
-                    
+                    if self.monitor and self.monitor.ib and self.monitor.ib.isConnected():
+                        account_values = self.monitor.ib.accountValues()
+                        for av in account_values:
+                            if av.tag == 'NetLiquidation' and av.currency == 'USD':
+                                snapshot_account_value = float(av.value)
+                            elif av.tag == 'BuyingPower' and av.currency == 'USD':
+                                snapshot_buying_power = float(av.value)
+                            elif av.tag == 'TotalCashValue' and av.currency == 'USD':
+                                snapshot_cash_balance = float(av.value)
+                            elif av.tag == 'UnrealizedPnL' and av.currency == 'USD':
+                                snapshot_unrealized_pnl = float(av.value)
+                        print(f"📊 Got account data via fallback: ${snapshot_account_value:,.2f}")
+                except Exception as fb_err:
+                    print(f"⚠️ Fallback account fetch failed: {fb_err}")
+            else:
+                # Use values from async fetch
+                try:
+                    snapshot_buying_power = float(next((item.value for item in account_summary if item.tag == 'BuyingPower'), 0))
+                    snapshot_cash_balance = float(next((item.value for item in account_summary if item.tag == 'TotalCashValue'), 0))
+                    snapshot_unrealized_pnl = float(next((item.value for item in account_summary if item.tag == 'UnrealizedPnL'), 0))
+                except:
+                    pass
+            
+            if DB_AVAILABLE and snapshot_account_value and snapshot_account_value > 0:
+                try:
                     trade_db.record_daily_snapshot(
-                        account_value=account_value,
-                        buying_power=buying_power,
-                        cash_balance=cash_balance,
-                        unrealized_pnl=unrealized_pnl,
+                        account_value=snapshot_account_value,
+                        buying_power=snapshot_buying_power,
+                        cash_balance=snapshot_cash_balance,
+                        unrealized_pnl=snapshot_unrealized_pnl,
                         position_count=len(positions),
                         vix_level=metrics.get('vix_value') if metrics else None,
                         market_regime=metrics.get('regime') if metrics else None
                     )
-                    print(f"📸 Recorded daily snapshot: ${account_value:,.2f}")
+                    print(f"📸 Recorded daily snapshot: ${snapshot_account_value:,.2f}")
                 except Exception as e:
                     print(f"⚠️ Failed to record daily snapshot: {e}")
             
