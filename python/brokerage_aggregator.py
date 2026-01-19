@@ -97,28 +97,48 @@ class BrokerageAggregator:
         """Get IBKR connection status and summary."""
         status = BrokerageStatus(name='IBKR', connected=False)
         
-        if not self.ibkr_monitor or not self.ibkr_monitor.ib:
-            status.error = "IBKR monitor not initialized"
-            return status
-        
         try:
-            if self.ibkr_monitor.ib.isConnected():
+            import sys
+            main_module = sys.modules.get('__main__')
+            ib_client = None
+            
+            # Try to get IB client from dashboard or global monitor
+            if main_module:
+                dashboard = getattr(main_module, 'dashboard', None)
+                monitor = getattr(main_module, 'monitor', None)
+                
+                if dashboard and hasattr(dashboard, 'monitor') and dashboard.monitor:
+                    if hasattr(dashboard.monitor, 'ib') and dashboard.monitor.ib:
+                        if dashboard.monitor.ib.isConnected():
+                            ib_client = dashboard.monitor.ib
+                
+                if not ib_client and monitor and hasattr(monitor, 'ib') and monitor.ib:
+                    if monitor.ib.isConnected():
+                        ib_client = monitor.ib
+            
+            # Fallback to stored monitor
+            if not ib_client and self.ibkr_monitor and self.ibkr_monitor.ib:
+                if self.ibkr_monitor.ib.isConnected():
+                    ib_client = self.ibkr_monitor.ib
+            
+            if ib_client:
                 status.connected = True
                 status.last_update = datetime.now()
+                status.account_count = 1
                 
-                # Get account summary
-                account_summary = self.ibkr_monitor.ib.accountSummary()
-                account_value = float(next(
-                    (item.value for item in account_summary if item.tag == 'NetLiquidation'), 
-                    0
-                ))
-                
-                # Get positions
-                portfolio = self.ibkr_monitor.ib.portfolio()
-                
-                status.account_count = 1  # IBKR typically shows as one account
-                status.total_value = account_value
-                status.position_count = len(portfolio)
+                # Use accountValues() - synchronous read of cached data (same as live-metrics endpoint)
+                try:
+                    account_values = ib_client.accountValues()
+                    for av in account_values:
+                        if av.tag == 'NetLiquidation' and av.currency == 'USD':
+                            status.total_value = float(av.value)
+                            break
+                    
+                    # Get position count from portfolio
+                    portfolio_items = ib_client.portfolio()
+                    status.position_count = len([p for p in portfolio_items if p.position != 0])
+                except Exception as data_err:
+                    logger.warning(f"Could not get IBKR data details: {data_err}")
             else:
                 status.error = "Not connected to TWS/IB Gateway"
                 
@@ -154,7 +174,7 @@ class BrokerageAggregator:
         return status
     
     def get_ibkr_positions(self) -> List[Dict]:
-        """Get positions from IBKR."""
+        """Get positions from IBKR using cached data."""
         positions = []
         
         if not self.ibkr_monitor or not self.ibkr_monitor.ib:
@@ -164,44 +184,32 @@ class BrokerageAggregator:
             if not self.ibkr_monitor.ib.isConnected():
                 return positions
             
-            portfolio = self.ibkr_monitor.ib.portfolio()
+            # Use cached positions to avoid event loop issues
+            import sys
+            main_module = sys.modules.get('__main__')
+            if main_module:
+                cached_positions = getattr(main_module, 'current_positions', None)
+                if cached_positions:
+                    # Convert cached positions to aggregator format
+                    for pos in cached_positions:
+                        position_info = {
+                            'symbol': pos.get('symbol', 'UNKNOWN'),
+                            'type': pos.get('type', 'UNKNOWN'),
+                            'quantity': pos.get('quantity', 0),
+                            'cost_basis': pos.get('cost_basis', 0),
+                            'market_value': pos.get('market_value', 0),
+                            'current_price': pos.get('stock_price', 0),
+                            'unrealized_pnl': pos.get('unrealized_pnl', 0),
+                            'strike': pos.get('strike'),
+                            'expiry': pos.get('expiry'),
+                            'call_put': pos.get('call_put'),
+                            'brokerage': 'IBKR',
+                            'account_id': pos.get('account_id', 'IBKR')
+                        }
+                        positions.append(position_info)
+                    return positions
             
-            for item in portfolio:
-                contract = item.contract
-                
-                # Determine position type
-                if contract.secType == 'STK':
-                    pos_type = 'STOCK'
-                    strike = None
-                    expiry = None
-                    call_put = None
-                elif contract.secType == 'OPT':
-                    pos_type = 'OPTION'
-                    strike = contract.strike
-                    expiry = contract.lastTradeDateOrContractMonth
-                    call_put = contract.right
-                else:
-                    pos_type = contract.secType
-                    strike = None
-                    expiry = None
-                    call_put = None
-                
-                position_info = {
-                    'symbol': contract.symbol,
-                    'type': pos_type,
-                    'quantity': item.position,
-                    'cost_basis': item.averageCost * abs(item.position),
-                    'market_value': item.marketValue,
-                    'current_price': item.marketPrice,
-                    'unrealized_pnl': item.unrealizedPNL,
-                    'realized_pnl': item.realizedPNL,
-                    'strike': strike,
-                    'expiry': expiry,
-                    'call_put': call_put,
-                    'brokerage': 'IBKR',
-                    'account_id': item.account
-                }
-                positions.append(position_info)
+            logger.warning("No cached IBKR positions available")
                 
         except Exception as e:
             logger.error(f"Error getting IBKR positions: {e}")

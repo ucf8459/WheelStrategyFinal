@@ -8971,14 +8971,21 @@ def get_brokerage_aggregator():
         try:
             from brokerage_aggregator import BrokerageAggregator
             _brokerage_aggregator = BrokerageAggregator()
-            # Set IBKR monitor if available
-            if 'monitor' in globals() and monitor:
-                _brokerage_aggregator.set_ibkr_monitor(monitor)
-            elif 'dashboard' in globals() and dashboard and dashboard.monitor:
-                _brokerage_aggregator.set_ibkr_monitor(dashboard.monitor)
             logger.info("✅ Brokerage aggregator initialized")
         except Exception as e:
             logger.error(f"Failed to initialize brokerage aggregator: {e}")
+            return None
+    
+    # Always refresh IBKR monitor reference (connection may have changed)
+    if _brokerage_aggregator:
+        try:
+            if 'dashboard' in globals() and dashboard and dashboard.monitor:
+                _brokerage_aggregator.set_ibkr_monitor(dashboard.monitor)
+            elif 'monitor' in globals() and monitor:
+                _brokerage_aggregator.set_ibkr_monitor(monitor)
+        except Exception as e:
+            logger.warning(f"Could not update IBKR monitor reference: {e}")
+    
     return _brokerage_aggregator
 
 
