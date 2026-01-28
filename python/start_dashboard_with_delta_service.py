@@ -14,11 +14,16 @@ from pathlib import Path
 def start_delta_service():
     """Start the background delta service"""
     print("🚀 Starting IBKR Delta Service...")
-    
+
+    # Ensure we run from the python/ directory so relative imports/files work
+    python_dir = Path(__file__).resolve().parent
+
     # Start delta service in background
-    delta_process = subprocess.Popen([
-        sys.executable, 'ibkr_delta_service.py'
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    delta_process = subprocess.Popen(
+        [sys.executable, 'ibkr_delta_service.py'],
+        cwd=str(python_dir),
+        # Inherit stdout/stderr to avoid deadlocks from unread pipes.
+    )
     
     print(f"✅ Delta service started with PID: {delta_process.pid}")
     return delta_process
@@ -26,11 +31,15 @@ def start_delta_service():
 def start_flask_app():
     """Start the main Flask application"""
     print("🚀 Starting Flask Dashboard...")
-    
+
+    python_dir = Path(__file__).resolve().parent
+
     # Start Flask app in background
-    flask_process = subprocess.Popen([
-        sys.executable, 'complete-wheel-strategy-system.py'
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    flask_process = subprocess.Popen(
+        [sys.executable, 'complete-wheel-strategy-system.py'],
+        cwd=str(python_dir),
+        # Inherit stdout/stderr to avoid deadlocks from unread pipes.
+    )
     
     print(f"✅ Flask app started with PID: {flask_process.pid}")
     return flask_process
@@ -52,6 +61,7 @@ def cleanup(processes):
 def main():
     """Main function to start both services"""
     processes = {}
+    delta_failed_logged = False
     
     try:
         # Start delta service first
@@ -72,12 +82,19 @@ def main():
         # Keep running until interrupted
         while True:
             time.sleep(1)
-            
-            # Check if processes are still running
-            for name, process in processes.items():
-                if process.poll() is not None:
-                    print(f"❌ {name} has stopped unexpectedly")
-                    return
+
+            # If the Flask app dies, stop everything.
+            flask = processes.get('flask_app')
+            if flask and flask.poll() is not None:
+                print("❌ flask_app has stopped unexpectedly")
+                return
+
+            # If the delta service dies, keep the dashboard running (it will fall back to estimates).
+            delta = processes.get('delta_service')
+            if delta and delta.poll() is not None and not delta_failed_logged:
+                delta_failed_logged = True
+                print("⚠️  delta_service stopped (continuing without live greeks)")
+                processes['delta_service'] = None
             
     except KeyboardInterrupt:
         print("\n🛑 Received interrupt signal")

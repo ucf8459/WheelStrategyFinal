@@ -14,11 +14,18 @@ from pathlib import Path
 def start_flask_app():
     """Start the main Flask application"""
     print("🚀 Starting Flask Dashboard...")
-    
+
+    # Ensure we run from the python/ directory so relative imports/files work
+    python_dir = Path(__file__).resolve().parent
+
     # Start Flask app in background
-    flask_process = subprocess.Popen([
-        sys.executable, 'complete-wheel-strategy-system.py'
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    flask_process = subprocess.Popen(
+        [sys.executable, 'complete-wheel-strategy-system.py'],
+        cwd=str(python_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     
     print(f"✅ Flask app started with PID: {flask_process.pid}")
     return flask_process
